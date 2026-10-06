@@ -27,18 +27,18 @@ jobs:
         run: gradle :app:assembleRelease --no-daemon --stacktrace
 
       - name: Name the APK
-        run: cp app/build/outputs/apk/release/app-release.apk Route0465.apk
+        run: cp app/build/outputs/apk/release/app-release.apk 465stats.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Route0465-apk
-          path: Route0465.apk
+          name: 465stats.apk
+          path: 465stats.apk
 
       - name: Publish as the "latest" release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: Route 0465 app (build ${{ github.run_number }})
-          body: "Install on the tablet: download Route0465.apk below and open it. Build ${{ github.run_number }} from commit ${{ github.sha }}."
-          files: Route0465.apk
+          name: 465stats (build ${{ github.run_number }})
+          body: "Install on the tablet: download 465stats.apk below and open it. Build ${{ github.run_number }} from commit ${{ github.sha }}."
+          files: 465stats.apk
           make_latest: true
