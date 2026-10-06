@@ -42,7 +42,7 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
     var confirmRemove by remember { mutableStateOf<LocalDate?>(null) }
     var backupMsg by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     var restoreUri by remember { mutableStateOf<android.net.Uri?>(null) }
-    val backups = remember(v) { if (XSales.hasAccess(ctx)) Backup.list() else emptyList() }
+    val backups = remember(v) { if (XSales.hasAccess(ctx)) DataBackup.list() else emptyList() }
     val restorePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) restoreUri = uri }
 
     val found = remember(v, path) { if (XSales.hasAccess(ctx)) XSales.folder(ctx)?.path else null }
@@ -136,13 +136,13 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
 
                 Panel {
                     H2("Backups")
-                    Muted("Saved automatically every day to Documents/${Backup.FOLDER} on this tablet. Point a sync app (Autosync for Google Drive) at that folder to copy them off the tablet. Keeps the last 30 days.", 14)
+                    Muted("Saved automatically every day to Documents/${DataBackup.FOLDER} on this tablet. Point a sync app (Autosync for Google Drive) at that folder to copy them off the tablet. Keeps the last 30 days.", 14)
                     Text(backups.firstOrNull()?.let { "Latest: ${it.name}" } ?: "No backups yet", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         SecondaryButton("Back up now") {
                             scope.launch {
                                 backupMsg = withContext(Dispatchers.IO) {
-                                    try { "Saved ${Backup.now(ctx).name}" to true } catch (e: Exception) { "Backup failed: ${e.message}" to false }
+                                    try { "Saved ${DataBackup.now(ctx).name}" to true } catch (e: Exception) { "Backup failed: ${e.message}" to false }
                                 }
                                 bump()
                             }
@@ -180,7 +180,7 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
             onConfirm = {
                 scope.launch {
                     backupMsg = withContext(Dispatchers.IO) {
-                        try { Backup.restore(ctx, uri) to true } catch (e: Exception) { "Restore failed: ${e.message}" to false }
+                        try { DataBackup.restore(ctx, uri) to true } catch (e: Exception) { "Restore failed: ${e.message}" to false }
                     }
                     bump()
                 }

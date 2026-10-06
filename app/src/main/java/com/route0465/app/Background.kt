@@ -23,7 +23,7 @@ class App : Application() {
         super.onCreate()
         Notify.createChannel(this)
         if (Prefs.auto(this)) AutoImport.schedule(this)
-        Backup.schedule(this)
+        DataBackup.schedule(this)
     }
 }
 

@@ -25,7 +25,7 @@ import java.util.zip.ZipOutputStream
  * the latest data; the newest [KEEP] are kept. A sync app (e.g. Autosync for Google Drive) can copy
  * that folder off the tablet. The app itself never touches the network.
  */
-object Backup {
+object DataBackup {
     const val FOLDER = "465stats backups"
     private const val PREFIX = "465stats-backup-"
     private const val ENTRY = "route0465.db"
@@ -152,7 +152,7 @@ object Backup {
 class BackupWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
     override fun doWork(): Result {
         try {
-            Backup.auto(applicationContext)
+            DataBackup.auto(applicationContext)
         } catch (_: Exception) {
         }
         return Result.success()

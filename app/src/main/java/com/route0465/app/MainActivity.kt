@@ -77,7 +77,7 @@ class MainActivity : ComponentActivity() {
         val ctx = applicationContext
         Thread {
             val r = try { AutoImport.check(ctx) } catch (_: Exception) { null }
-            try { Backup.auto(ctx) } catch (_: Exception) { }
+            try { DataBackup.auto(ctx) } catch (_: Exception) { }
             if (r != null) runOnUiThread { version.value = version.value + 1 }
         }.start()
     }
