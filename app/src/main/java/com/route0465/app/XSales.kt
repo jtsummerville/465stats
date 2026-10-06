@@ -53,8 +53,8 @@ object XSales {
         if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager()
         else ctx.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
 
-    /** True for the live XSales data folder ("Ole prod"), false for the test/stale one ("Ole"). */
-    fun isProd(dir: File): Boolean = dir.path.lowercase().contains("prod")
+    /** True for the live XSales data folder ("Ole prd"), false for the stale test one ("Ole"). Matches "prd" or "prod". */
+    fun isProd(dir: File): Boolean = Regex("(^|[^a-z])pro?d([^a-z]|$)").containsMatchIn(dir.path.lowercase())
 
     /**
      * Every folder in shared storage (up to 5 levels deep) that holds BCKAftMain.sqlite,
@@ -73,7 +73,7 @@ object XSales {
         return out.sortedWith(compareByDescending<File> { isProd(it) }.thenBy { it.path.lowercase() })
     }
 
-    /** The folder chosen in Setup; otherwise the production ("prod") folder; never a non-prod folder when a prod one exists. */
+    /** The folder chosen in Setup; otherwise the production ("Ole prd") folder; never a non-prod folder when a prod one exists. */
     fun folder(ctx: Context): File? {
         val p = Prefs.xsalesPath(ctx)
         if (p.isNotBlank()) {
