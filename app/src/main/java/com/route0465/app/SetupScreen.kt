@@ -102,7 +102,25 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
                     H2("XSales folder")
                     Text(found?.let { "Using $it" } ?: "Not found yet" + if (!XSales.hasAccess(ctx)) " (allow file access on Home first)" else "", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                     OutlinedTextField(path, { path = it }, Modifier.fillMaxWidth(), label = { Text("Folder path (leave blank to find it automatically)") }, singleLine = true)
-                    SecondaryButton("Save folder") { Prefs.setXsalesPath(ctx, path); bump() }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SecondaryButton("Save folder") { Prefs.setXsalesPath(ctx, path); bump() }
+                        SecondaryButton("Find automatically") { path = ""; Prefs.setXsalesPath(ctx, ""); bump() }
+                    }
+                    var folders by remember { mutableStateOf<List<java.io.File>?>(null) }
+                    SecondaryButton("Show all XSales folders") {
+                        scope.launch { folders = withContext(Dispatchers.IO) { if (XSales.hasAccess(ctx)) XSales.candidates() else emptyList() } }
+                    }
+                    folders?.let { list ->
+                        if (list.isEmpty()) Muted("No folder with ${XSales.AFT} found.", 14)
+                        list.forEach { d ->
+                            HorizontalDivider(color = C.Divider)
+                            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(d.path + if (XSales.isProd(d)) "  [prod]" else "", fontSize = 14.sp, modifier = Modifier.weight(1f))
+                                Text("Use this", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                                    modifier = Modifier.clickable { path = d.path; Prefs.setXsalesPath(ctx, d.path); bump() }.padding(12.dp))
+                            }
+                        }
+                    }
                 }
 
                 Panel {

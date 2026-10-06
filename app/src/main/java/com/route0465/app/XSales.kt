@@ -53,21 +53,34 @@ object XSales {
         if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager()
         else ctx.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
 
-    /** The configured folder, else a folder named xsales in shared storage, else one holding BCKAftMain.sqlite. */
+    /** True for the live XSales data folder ("Ole prod"), false for the test/stale one ("Ole"). */
+    fun isProd(dir: File): Boolean = dir.path.lowercase().contains("prod")
+
+    /**
+     * Every folder in shared storage (up to 5 levels deep) that holds BCKAftMain.sqlite,
+     * production folders first. There can be more than one: "Ole" is a stale test copy, "Ole prod" is live.
+     */
+    fun candidates(): List<File> {
+        val out = ArrayList<File>()
+        fun walk(d: File, depth: Int) {
+            val kids = d.listFiles() ?: return
+            if (kids.any { it.isFile && it.name == AFT }) out += d
+            if (depth >= 5) return
+            kids.filter { it.isDirectory && !it.name.startsWith(".") && !it.name.equals("Android", ignoreCase = true) }
+                .forEach { walk(it, depth + 1) }
+        }
+        walk(Environment.getExternalStorageDirectory(), 0)
+        return out.sortedWith(compareByDescending<File> { isProd(it) }.thenBy { it.path.lowercase() })
+    }
+
+    /** The folder chosen in Setup; otherwise the production ("prod") folder; never a non-prod folder when a prod one exists. */
     fun folder(ctx: Context): File? {
         val p = Prefs.xsalesPath(ctx)
         if (p.isNotBlank()) {
             val f = File(p)
             return if (f.isDirectory) f else null
         }
-        val root = Environment.getExternalStorageDirectory()
-        val top = root.listFiles()?.filter { it.isDirectory } ?: return null
-        top.firstOrNull { it.name.equals("xsales", ignoreCase = true) }?.let { return it }
-        top.firstOrNull { File(it, AFT).isFile }?.let { return it }
-        for (d in top) {
-            d.listFiles()?.filter { it.isDirectory }?.firstOrNull { File(it, AFT).isFile }?.let { return it }
-        }
-        return null
+        return candidates().firstOrNull()
     }
 
     private fun snapshot(ctx: Context, src: File): File {
@@ -116,9 +129,9 @@ object XSales {
         return null
     }
 
-    fun inspect(ctx: Context, name: String): Backup {
+    fun inspect(ctx: Context, name: String, dir: File? = null): Backup {
         if (!hasAccess(ctx)) return Backup(name, false, null, 0, "File access not allowed yet")
-        val folder = folder(ctx) ?: return Backup(name, false, null, 0, "XSales folder not found")
+        val folder = dir ?: folder(ctx) ?: return Backup(name, false, null, 0, "XSales folder not found")
         val f = File(folder, name)
         if (!f.isFile) return Backup(name, false, null, 0, "Not in ${folder.path}")
         return try {
@@ -165,9 +178,9 @@ object XSales {
             // 1) The whole backup must be today's.
             val fileDate = businessDate(db)
             if (fileDate != today) {
-                val befToday = !useBefore && inspect(ctx, BEF).date == today
-                repo.log("Not imported: $mainName is dated ${fileDate?.format(Fmt.mdy) ?: "unknown"}, today is ${today.format(Fmt.mdy)}")
-                return ImportResult.WrongDate(mainName, fileDate, today, befToday)
+                val befToday = !useBefore && inspect(ctx, BEF, folder).date == today
+                repo.log("Not imported: ${src.path} is dated ${fileDate?.format(Fmt.mdy) ?: "unknown"}, today is ${today.format(Fmt.mdy)}")
+                return ImportResult.WrongDate(src.path, fileDate, today, befToday)
             }
             if (!hasTable(db, "demandUp")) return ImportResult.Failed("$mainName has no tickets table (demandUp).")
 
@@ -258,7 +271,7 @@ object XSales {
             w.beginTransaction()
             try {
                 if (repo.dayExists(today)) return ImportResult.AlreadyImported(today)
-                val source = if (useBefore) "$BEF (before End of Day)" else AFT
+                val source = if (useBefore) "${src.path} (before End of Day)" else src.path
                 w.insert("days", null, ContentValues().apply {
                     put("date", dayStr); put("imported_at", Db.now()); put("source", source)
                     put("pay", pay); put("net_sales", netSales); put("docs_kept", kept.size)
@@ -306,7 +319,7 @@ object XSales {
             }
 
             return ImportResult.Imported(
-                date = today, source = if (useBefore) BEF else AFT, pay = pay, netSales = netSales,
+                date = today, source = src.path, pay = pay, netSales = netSales,
                 stores = kept.filter { !it.voided }.map { it.cus }.distinct().size,
                 saleLines = lines.count { !it.isReturn && !it.doc.voided },
                 creditLines = lines.count { it.isReturn && !it.doc.voided },

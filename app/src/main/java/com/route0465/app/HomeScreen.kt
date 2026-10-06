@@ -46,7 +46,7 @@ fun HomeScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
     var result by remember { mutableStateOf<ImportResult?>(null) }
     var busy by remember { mutableStateOf(false) }
     var auto by remember { mutableStateOf(Prefs.auto(ctx)) }
-    var backups by remember { mutableStateOf<List<XSales.Backup>?>(null) }
+    var backups by remember { mutableStateOf<List<String>?>(null) }
     val access = remember(v) { XSales.hasAccess(ctx) }
     val askStorage = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { bump() }
     val days = remember(v) { repo.days() }
@@ -114,20 +114,10 @@ fun HomeScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                 }
                 SecondaryButton("Check XSales backups") {
                     scope.launch {
-                        backups = withContext(Dispatchers.IO) { listOf(XSales.AFT, XSales.BEF).map { XSales.inspect(ctx, it) } }
+                        backups = withContext(Dispatchers.IO) { describeBackups(ctx, today) }
                     }
                 }
-                backups?.let { list ->
-                    val fmt = SimpleDateFormat("MM/dd h:mm a", Locale.US)
-                    list.forEach { b ->
-                        val dated = b.date?.let { if (it == today) "dated today" else "dated ${it.format(Fmt.mdy)}" } ?: "date unknown"
-                        Muted(
-                            if (!b.exists) "${b.name}: ${b.note}"
-                            else "${b.name}: $dated · saved ${fmt.format(Date(b.modified))}" + if (b.note.isNotEmpty()) " · ${b.note}" else "",
-                            14,
-                        )
-                    }
-                }
+                backups?.forEach { line -> Muted(line, 14) }
             }
 
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -193,3 +183,21 @@ private fun ResultCard(r: ImportResult?, onUseBefore: () -> Unit, go: (Screen) -
 
 @Suppress("unused")
 private val unusedColor = Color.Unspecified
+
+/** One line per backup folder found, with each backup's date, marking the folder the app reads. */
+fun describeBackups(ctx: android.content.Context, today: LocalDate): List<String> {
+    if (!XSales.hasAccess(ctx)) return listOf("File access isn't allowed yet.")
+    val using = XSales.folder(ctx)
+    val dirs = (XSales.candidates() + listOfNotNull(using)).distinctBy { it.path }
+    if (dirs.isEmpty()) return listOf("No folder with ${XSales.AFT} was found. Set the folder in Setup.")
+    val fmt = SimpleDateFormat("MM/dd h:mm a", Locale.US)
+    return dirs.map { d ->
+        val parts = listOf(XSales.AFT, XSales.BEF).map { name ->
+            val b = XSales.inspect(ctx, name, d)
+            val dated = b.date?.let { if (it == today) "TODAY" else it.format(Fmt.mdy) } ?: "date unknown"
+            if (!b.exists) "$name missing" else "$name $dated (saved ${fmt.format(Date(b.modified))})"
+        }
+        val tag = if (d.path == using?.path) "USING → " else ""
+        tag + d.path + (if (XSales.isProd(d)) "  [prod]" else "") + "\n   " + parts.joinToString("\n   ")
+    }
+}
