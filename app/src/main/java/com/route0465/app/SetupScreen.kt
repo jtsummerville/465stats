@@ -40,6 +40,10 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
     var rateMsg by remember { mutableStateOf<String?>(null) }
     var picking by remember { mutableStateOf(false) }
     var confirmRemove by remember { mutableStateOf<LocalDate?>(null) }
+    var backupMsg by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    var restoreUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    val backups = remember(v) { if (XSales.hasAccess(ctx)) Backup.list() else emptyList() }
+    val restorePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) restoreUri = uri }
 
     val found = remember(v, path) { if (XSales.hasAccess(ctx)) XSales.folder(ctx)?.path else null }
     val rates = remember(v) { repo.rateSummary() }
@@ -131,6 +135,26 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
                 }
 
                 Panel {
+                    H2("Backups")
+                    Muted("Saved automatically every day to Documents/${Backup.FOLDER} on this tablet. Point a sync app (Autosync for Google Drive) at that folder to copy them off the tablet. Keeps the last 30 days.", 14)
+                    Text(backups.firstOrNull()?.let { "Latest: ${it.name}" } ?: "No backups yet", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SecondaryButton("Back up now") {
+                            scope.launch {
+                                backupMsg = withContext(Dispatchers.IO) {
+                                    try { "Saved ${Backup.now(ctx).name}" to true } catch (e: Exception) { "Backup failed: ${e.message}" to false }
+                                }
+                                bump()
+                            }
+                        }
+                        SecondaryButton("Restore from backup") {
+                            restorePicker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream", "*/*"))
+                        }
+                    }
+                    backupMsg?.let { (msg, ok) -> if (ok) Banner(msg, C.GreenSoft, C.GreenDark) else Banner(msg, C.AmberSoft, C.Amber) }
+                }
+
+                Panel {
                     H2("Imports")
                     if (lastDay != null) {
                         Muted("Remove the import for ${lastDay.date.format(Fmt.full)} so it can be imported again (for testing, or after uploading rates).", 14)
@@ -150,6 +174,20 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
         }
     }
     if (picking) ProductPicker(onPick = { repo.addOrderItem(it.code); picking = false; bump() }, onDismiss = { picking = false })
+    restoreUri?.let { uri ->
+        ConfirmDialog(
+            "Restore from backup?", "Replaces everything in this app with what's in that backup. Your current data is saved first as a \"before-restore\" file in the backups folder, just in case.", "Restore",
+            onConfirm = {
+                scope.launch {
+                    backupMsg = withContext(Dispatchers.IO) {
+                        try { Backup.restore(ctx, uri) to true } catch (e: Exception) { "Restore failed: ${e.message}" to false }
+                    }
+                    bump()
+                }
+            },
+            onDismiss = { restoreUri = null },
+        )
+    }
     confirmRemove?.let { d ->
         ConfirmDialog(
             "Remove ${d.format(Fmt.day)}?", "Deletes that day's pay, sales and inventory from this app so it can be imported again. XSales isn't touched.", "Remove",

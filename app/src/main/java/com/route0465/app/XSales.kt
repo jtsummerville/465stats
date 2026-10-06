@@ -318,6 +318,7 @@ object XSales {
                 w.endTransaction()
             }
 
+            runCatching { Backup.auto(ctx) }
             return ImportResult.Imported(
                 date = today, source = src.path, pay = pay, netSales = netSales,
                 stores = kept.filter { !it.voided }.map { it.cus }.distinct().size,
