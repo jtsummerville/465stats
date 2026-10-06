@@ -1,7 +1,10 @@
 package com.route0465.app
 
 import android.content.ContentValues
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.database.sqlite.SQLiteDatabase
 import android.os.Environment
 import java.io.File
@@ -45,7 +48,10 @@ object XSales {
 
     data class Backup(val name: String, val exists: Boolean, val date: LocalDate?, val modified: Long, val note: String)
 
-    fun hasAccess(): Boolean = Environment.isExternalStorageManager()
+    /** Android 11+: "All files access". Android 10 and older: the storage permission. */
+    fun hasAccess(ctx: Context): Boolean =
+        if (Build.VERSION.SDK_INT >= 30) Environment.isExternalStorageManager()
+        else ctx.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
 
     /** The configured folder, else a folder named xsales in shared storage, else one holding BCKAftMain.sqlite. */
     fun folder(ctx: Context): File? {
@@ -111,7 +117,7 @@ object XSales {
     }
 
     fun inspect(ctx: Context, name: String): Backup {
-        if (!hasAccess()) return Backup(name, false, null, 0, "File access not allowed yet")
+        if (!hasAccess(ctx)) return Backup(name, false, null, 0, "File access not allowed yet")
         val folder = folder(ctx) ?: return Backup(name, false, null, 0, "XSales folder not found")
         val f = File(folder, name)
         if (!f.isFile) return Backup(name, false, null, 0, "Not in ${folder.path}")
@@ -134,7 +140,7 @@ object XSales {
     fun runImport(ctx: Context, useBefore: Boolean = false): ImportResult {
         val repo = Db.get(ctx)
         val today = LocalDate.now()
-        if (!hasAccess()) return ImportResult.Failed("File access isn't allowed yet. Tap \"Allow file access\" on Home.")
+        if (!hasAccess(ctx)) return ImportResult.Failed("File access isn't allowed yet. Tap \"Allow file access\" on Home.")
         val folder = folder(ctx) ?: return ImportResult.Failed("Couldn't find the XSales folder. Set it in Setup.")
         if (repo.dayExists(today)) return ImportResult.AlreadyImported(today)
 

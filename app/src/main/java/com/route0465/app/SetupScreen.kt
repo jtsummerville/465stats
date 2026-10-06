@@ -41,7 +41,7 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
     var picking by remember { mutableStateOf(false) }
     var confirmRemove by remember { mutableStateOf<LocalDate?>(null) }
 
-    val found = remember(v, path) { if (XSales.hasAccess()) XSales.folder(ctx)?.path else null }
+    val found = remember(v, path) { if (XSales.hasAccess(ctx)) XSales.folder(ctx)?.path else null }
     val rates = remember(v) { repo.rateSummary() }
     val order = remember(v) { repo.orderItems() }
     val stores = remember(v) { repo.stores() }
@@ -100,7 +100,7 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                 Panel {
                     H2("XSales folder")
-                    Text(found?.let { "Using $it" } ?: "Not found yet" + if (!XSales.hasAccess()) " (allow file access on Home first)" else "", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Text(found?.let { "Using $it" } ?: "Not found yet" + if (!XSales.hasAccess(ctx)) " (allow file access on Home first)" else "", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                     OutlinedTextField(path, { path = it }, Modifier.fillMaxWidth(), label = { Text("Folder path (leave blank to find it automatically)") }, singleLine = true)
                     SecondaryButton("Save folder") { Prefs.setXsalesPath(ctx, path); bump() }
                 }

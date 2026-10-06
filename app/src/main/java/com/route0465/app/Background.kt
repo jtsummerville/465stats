@@ -55,7 +55,7 @@ object AutoImport {
 
     @Synchronized
     fun check(ctx: Context): ImportResult? {
-        if (!Prefs.auto(ctx) || !XSales.hasAccess()) return null
+        if (!Prefs.auto(ctx) || !XSales.hasAccess(ctx)) return null
         Prefs.setLastCheck(ctx, Db.now())
         val folder = XSales.folder(ctx) ?: return null
         val f = File(folder, XSales.AFT)
@@ -73,6 +73,7 @@ object Notify {
     private const val CHANNEL = "imports"
 
     fun createChannel(ctx: Context) {
+        if (Build.VERSION.SDK_INT < 26) return
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Route imports", NotificationManager.IMPORTANCE_DEFAULT))
     }
@@ -87,7 +88,9 @@ object Notify {
         )
         val text = "Pay ${Fmt.money(r.pay)} · Net sales ${Fmt.money(r.netSales)}" +
             if (r.missingRates.isNotEmpty()) " · rates missing for ${r.missingRates.size} products" else ""
-        val n = Notification.Builder(ctx, CHANNEL)
+        @Suppress("DEPRECATION")
+        val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(ctx, CHANNEL) else Notification.Builder(ctx)
+        val n = builder
             .setSmallIcon(R.drawable.ic_stat)
             .setContentTitle("Route imported · ${r.date.format(Fmt.day)}")
             .setContentText(text)

@@ -1,6 +1,10 @@
 package com.route0465.app
 
+import android.Manifest
 import android.content.Intent
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
@@ -43,7 +47,8 @@ fun HomeScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var auto by remember { mutableStateOf(Prefs.auto(ctx)) }
     var backups by remember { mutableStateOf<List<XSales.Backup>?>(null) }
-    val access = remember(v) { XSales.hasAccess() }
+    val access = remember(v) { XSales.hasAccess(ctx) }
+    val askStorage = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { bump() }
     val days = remember(v) { repo.days() }
     val stockDates = remember(v) { repo.stockDates() }
     val cases = remember(v) { stockDates.firstOrNull()?.let { d -> repo.stock(d).sumOf { it.cases } } }
@@ -63,14 +68,18 @@ fun HomeScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
     ScreenColumn {
         if (!access) {
             Banner(
-                "To read the XSales backups, Android needs you to allow \"All files access\" for this app once. The app only copies and reads them; it never changes XSales's files.",
+                "To read the XSales backups, Android needs you to allow file access for this app once. The app only copies and reads them; it never changes XSales's files.",
                 C.AmberSoft, C.Amber, title = "Allow file access",
             ) {
                 SecondaryButton("Allow file access") {
-                    ctx.startActivity(
-                        Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${ctx.packageName}"))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
+                    if (Build.VERSION.SDK_INT >= 30) {
+                        ctx.startActivity(
+                            Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${ctx.packageName}"))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    } else {
+                        askStorage.launch(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE))
+                    }
                 }
             }
         }

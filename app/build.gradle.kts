@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "com.route0465.app"
-        minSdk = 30
+        minSdk = 24
         targetSdk = 34
         versionCode = runNumber
         versionName = "0.1.$runNumber"
@@ -36,6 +36,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
     kotlinOptions {
         jvmTarget = "17"
@@ -58,6 +59,7 @@ android {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")

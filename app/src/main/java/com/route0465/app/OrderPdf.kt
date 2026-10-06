@@ -6,6 +6,8 @@ import android.content.Intent
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
+import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import java.io.File
@@ -64,6 +66,12 @@ object OrderPdf {
     }
 
     fun saveToDownloads(ctx: Context, f: File) {
+        if (Build.VERSION.SDK_INT < 29) {
+            @Suppress("DEPRECATION")
+            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).apply { mkdirs() }
+            f.copyTo(File(dir, f.name), overwrite = true)
+            return
+        }
         val cv = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, f.name)
             put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
