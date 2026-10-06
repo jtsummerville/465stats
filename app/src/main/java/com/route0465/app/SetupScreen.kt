@@ -8,9 +8,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,6 +23,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -42,8 +46,12 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
     var confirmRemove by remember { mutableStateOf<LocalDate?>(null) }
     var backupMsg by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     var restoreUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var restorePw by remember { mutableStateOf("") }
+    var backupPw by remember { mutableStateOf(Prefs.backupPassword(ctx)) }
+    var showPw by remember { mutableStateOf(false) }
+    val hasPw = remember(v) { Prefs.backupPassword(ctx).isNotEmpty() }
     val backups = remember(v) { if (XSales.hasAccess(ctx)) DataBackup.list() else emptyList() }
-    val restorePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) restoreUri = uri }
+    val restorePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) { restorePw = ""; restoreUri = uri } }
 
     val found = remember(v, path) { if (XSales.hasAccess(ctx)) XSales.folder(ctx)?.path else null }
     val rates = remember(v) { repo.rateSummary() }
@@ -136,10 +144,34 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
 
                 Panel {
                     H2("Backups")
-                    Muted("Saved automatically every day to Documents/${DataBackup.FOLDER} on this tablet. Point a sync app (Autosync for Google Drive) at that folder to copy them off the tablet. Keeps the last 30 days.", 14)
+                    Muted("Saved automatically every day to Documents/${DataBackup.FOLDER} on this tablet, locked with the password below. Point a sync app (Autosync for Google Drive) at that folder to copy them off the tablet. Keeps the last 30 days.", 14)
+                    if (!hasPw) Banner("Backups are off until you set a password.", C.AmberSoft, C.Amber)
+                    OutlinedTextField(
+                        backupPw, { backupPw = it }, Modifier.fillMaxWidth(), label = { Text("Backup password") }, singleLine = true,
+                        visualTransformation = if (showPw) VisualTransformation.None else PasswordVisualTransformation(),
+                    )
+                    Muted("Write it down somewhere safe. Without it, nobody (including you) can open the backups. It's saved in this app so daily backups run on their own.", 13)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SecondaryButton("Save password") {
+                            val p = backupPw.trim()
+                            if (p.length < 4) { backupMsg = "Use at least 4 characters." to false; return@SecondaryButton }
+                            backupPw = p
+                            Prefs.setBackupPassword(ctx, p)
+                            scope.launch {
+                                backupMsg = withContext(Dispatchers.IO) {
+                                    try {
+                                        val f = DataBackup.passwordChanged(ctx)
+                                        "Password saved." + (f?.let { " Saved ${it.name} with it." } ?: "") to true
+                                    } catch (e: Exception) { "Password saved, but the backup failed: ${e.message}" to false }
+                                }
+                                bump()
+                            }
+                        }
+                        SecondaryButton(if (showPw) "Hide" else "Show") { showPw = !showPw }
+                    }
                     Text(backups.firstOrNull()?.let { "Latest: ${it.name}" } ?: "No backups yet", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        SecondaryButton("Back up now") {
+                        SecondaryButton("Back up now", enabled = hasPw) {
                             scope.launch {
                                 backupMsg = withContext(Dispatchers.IO) {
                                     try { "Saved ${DataBackup.now(ctx).name}" to true } catch (e: Exception) { "Backup failed: ${e.message}" to false }
@@ -175,17 +207,31 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
     }
     if (picking) ProductPicker(onPick = { repo.addOrderItem(it.code); picking = false; bump() }, onDismiss = { picking = false })
     restoreUri?.let { uri ->
-        ConfirmDialog(
-            "Restore from backup?", "Replaces everything in this app with what's in that backup. Your current data is saved first as a \"before-restore\" file in the backups folder, just in case.", "Restore",
-            onConfirm = {
-                scope.launch {
-                    backupMsg = withContext(Dispatchers.IO) {
-                        try { DataBackup.restore(ctx, uri) to true } catch (e: Exception) { "Restore failed: ${e.message}" to false }
-                    }
-                    bump()
+        AlertDialog(
+            onDismissRequest = { restoreUri = null },
+            title = { Text("Restore from backup?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Replaces everything in this app with what's in that backup. Your current data is saved first as a \"before-restore\" file in the backups folder, just in case.")
+                    OutlinedTextField(
+                        restorePw, { restorePw = it }, Modifier.fillMaxWidth(), label = { Text("That backup's password") }, singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
                 }
             },
-            onDismiss = { restoreUri = null },
+            confirmButton = {
+                TextButton(onClick = {
+                    val pw = restorePw.trim()
+                    restoreUri = null
+                    scope.launch {
+                        backupMsg = withContext(Dispatchers.IO) {
+                            try { DataBackup.restore(ctx, uri, pw) to true } catch (e: Exception) { "Restore failed: ${e.message}" to false }
+                        }
+                        bump()
+                    }
+                }) { Text("Restore", color = C.Red, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { restoreUri = null }) { Text("Cancel") } },
         )
     }
     confirmRemove?.let { d ->
