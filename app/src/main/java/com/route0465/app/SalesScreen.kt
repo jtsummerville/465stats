@@ -44,6 +44,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.LocalDate
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.Icons
 import java.time.temporal.ChronoUnit
 import kotlin.math.abs
 import kotlin.math.max
@@ -138,23 +142,21 @@ fun SalesScreen(v: Int) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             RangeMenu(range) { range = it; back = 0 }
             SalesArrow(left = true) { back += 1 }
-            Column(Modifier.weight(1f)) {
-                Text(range.title(today, back), fontSize = 17.sp, fontWeight = FontWeight.Bold, lineHeight = 22.sp)
-                Muted("${routeDays.size} route day" + if (routeDays.size == 1) "" else "s", 13)
+            // Tap the date to pick any day, week, month or year from a calendar.
+            Column(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).clickable { picking = true }.padding(horizontal = 6.dp, vertical = 4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(range.title(today, back), fontSize = 17.sp, fontWeight = FontWeight.Bold, lineHeight = 22.sp, modifier = Modifier.weight(1f, fill = false))
+                    Icon(Icons.Default.DateRange, contentDescription = "Pick a date", tint = C.Green, modifier = Modifier.size(22.dp))
+                }
+                Muted("${routeDays.size} route day" + (if (routeDays.size == 1) "" else "s") + " · tap the date to change it", 13)
             }
             SalesArrow(left = false, enabled = back > 0) { back -= 1 }
             if (LocalWide.current) Segmented(listOf("Overview", "By store"), view) { view = it }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-            Text(
-                "Pick a date…", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 15.sp,
-                modifier = Modifier.clickable { picking = true }.padding(vertical = 6.dp),
-            )
-            if (back > 0) Text(
-                "Back to the current ${range.unit}", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 15.sp,
-                modifier = Modifier.clickable { back = 0 }.padding(vertical = 6.dp),
-            )
-        }
+        if (back > 0) Text(
+            "Back to the current ${range.unit}", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+            modifier = Modifier.clickable { back = 0 }.padding(vertical = 6.dp),
+        )
         if (picking) {
             val todayMillis = today.toEpochDay() * 86_400_000L
             val state = rememberDatePickerState(
