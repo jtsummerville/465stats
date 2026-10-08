@@ -185,6 +185,23 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
         LineRow(c.s("dmd_code"), c.s("cus_code"), c.s("store"), c.s("code"), c.s("name"), c.d("qty"), c.d("price"), c.d("net"), c.i("is_return") == 1)
     }
 
+    /** Every sale and credit line from tickets that weren't voided, for days from..to (inclusive). */
+    fun linesBetween(from: LocalDate, to: LocalDate): List<Pair<LocalDate, LineRow>> = readableDatabase.list(
+        "SELECT l.* FROM lines l JOIN docs d ON d.date=l.date AND d.dmd_code=l.dmd_code " +
+            "WHERE l.date>=? AND l.date<=? AND d.voided=0",
+        arrayOf(from.toString(), to.toString())
+    ) { c ->
+        LocalDate.parse(c.s("date")) to
+            LineRow(c.s("dmd_code"), c.s("cus_code"), c.s("store"), c.s("code"), c.s("name"), c.d("qty"), c.d("price"), c.d("net"), c.i("is_return") == 1)
+    }
+
+    fun voidsBetween(from: LocalDate, to: LocalDate): List<Pair<LocalDate, DocRow>> = readableDatabase.list(
+        "SELECT * FROM docs WHERE date>=? AND date<=? AND voided=1 ORDER BY date DESC", arrayOf(from.toString(), to.toString())
+    ) { c ->
+        LocalDate.parse(c.s("date")) to
+            DocRow(c.s("dmd_code"), c.s("cus_code"), c.s("store"), c.i("is_return") == 1, c.d("net"), true, c.s("void_reason"))
+    }
+
     fun deleteDay(date: LocalDate) {
         val w = writableDatabase
         w.beginTransaction()

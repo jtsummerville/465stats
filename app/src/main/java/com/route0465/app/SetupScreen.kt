@@ -192,15 +192,27 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
                         Muted("Remove the import for ${lastDay.date.format(Fmt.full)} so it can be imported again (for testing, or after uploading rates).", 14)
                         SecondaryButton("Remove ${lastDay.date.format(Fmt.day)} import") { confirmRemove = lastDay.date }
                     }
-                    if (log.isEmpty()) Muted("Nothing yet.")
-                    log.forEach { (at, msg) ->
-                        HorizontalDivider(color = C.Divider)
-                        Column(Modifier.padding(vertical = 6.dp)) {
-                            Text(at, fontSize = 12.sp, color = C.Muted)
-                            Text(msg, fontSize = 14.sp)
-                        }
+                    var showLog by remember { mutableStateOf(false) }
+                    HorizontalDivider(color = C.Divider)
+                    Row(
+                        Modifier.fillMaxWidth().clickable { showLog = !showLog }.padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Activity log", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                        Muted(if (log.isEmpty()) "empty" else "${log.size} entries", 13)
+                        Text(if (showLog) "  ▴" else "  ▾", fontSize = 18.sp, color = C.Muted)
                     }
-                    Muted("Last background check: ${Prefs.lastCheck(ctx).ifEmpty { "not yet" }}", 13)
+                    if (showLog) {
+                        if (log.isEmpty()) Muted("Nothing yet.")
+                        log.forEach { (at, msg) ->
+                            HorizontalDivider(color = C.Divider)
+                            Column(Modifier.padding(vertical = 6.dp)) {
+                                Text(at, fontSize = 12.sp, color = C.Muted)
+                                Text(msg, fontSize = 14.sp)
+                            }
+                        }
+                        Muted("Last background check: ${Prefs.lastCheck(ctx).ifEmpty { "not yet" }}", 13)
+                    }
                 }
             }
         }
