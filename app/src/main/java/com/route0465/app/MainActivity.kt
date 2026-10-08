@@ -53,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.LocalDate
@@ -185,12 +186,14 @@ private fun Header(title: String, v: Int) {
     val last = remember(v) { Db.get(ctx).days().firstOrNull() }
     val importedToday = last?.date == today
     Row(
-        Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 28.dp, vertical = 16.dp),
+        Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 28.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(title, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = C.Ink)
-        Text("Route 0465 · ${today.format(Fmt.full)}", fontSize = 15.sp, color = C.Muted, modifier = Modifier.weight(1f))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = C.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("Route 0465 · ${today.format(Fmt.full)}", fontSize = 15.sp, color = C.Muted, maxLines = 1)
+        }
         val label = when {
             importedToday -> "Imported today"
             last != null -> "Last import ${last.date.format(Fmt.day)}"

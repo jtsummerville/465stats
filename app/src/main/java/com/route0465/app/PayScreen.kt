@@ -1,6 +1,17 @@
 package com.route0465.app
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material3.Icon
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,7 +49,7 @@ fun PayScreen(v: Int) {
 
     ScreenColumn {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SecondaryButton("‹", Modifier.size(56.dp)) { offset -= 1 }
+            ArrowButton(left = true) { offset -= 1 }
             Panel(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -51,7 +62,7 @@ fun PayScreen(v: Int) {
                     }
                 }
             }
-            SecondaryButton("›", Modifier.size(56.dp), enabled = offset < 0) { offset += 1 }
+            ArrowButton(left = false, enabled = offset < 0) { offset += 1 }
         }
 
         Split {
@@ -79,5 +90,23 @@ fun PayScreen(v: Int) {
             }
         }
         Muted("One number per day. Pay periods are 14 days, two Saturday–Friday weeks, counted from 07/11/2026.", 14)
+    }
+}
+
+/** A large, easy-to-tap arrow for moving between pay periods. */
+@Composable
+private fun ArrowButton(left: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    Box(
+        Modifier.size(76.dp).clip(shape).background(if (enabled) Color.White else C.Ground)
+            .border(2.dp, if (enabled) C.Green else C.Line, shape).clickable(enabled = enabled) { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            if (left) Icons.Filled.KeyboardArrowLeft else Icons.Filled.KeyboardArrowRight,
+            contentDescription = if (left) "Earlier pay period" else "Later pay period",
+            tint = if (enabled) C.Green else C.Line,
+            modifier = Modifier.size(56.dp),
+        )
     }
 }

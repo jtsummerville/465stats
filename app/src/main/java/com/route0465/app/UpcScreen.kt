@@ -124,16 +124,16 @@ fun UpcScreen() {
     var open by remember { mutableStateOf<UpcItem?>(null) }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        val countText = if (q.isBlank()) "${all.size} products · ${all.count { it.upc.isNotEmpty() }} with barcodes"
+            else "${list.size} match" + if (list.size == 1) "" else "es"
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             OutlinedTextField(
                 q, { q = it }, Modifier.weight(1f), singleLine = true,
-                label = { Text("Search item code, description, or UPC") },
+                label = { Text("Search code, description or UPC", maxLines = 1) },
             )
-            Muted(
-                if (q.isBlank()) "${all.size} products · ${all.count { it.upc.isNotEmpty() }} with barcodes"
-                else "${list.size} match" + if (list.size == 1) "" else "es", 14,
-            )
+            if (LocalWide.current) Muted(countText, 14)
         }
+        if (!LocalWide.current) Muted(countText, 14)
         Muted("Case UPCs from the Ole price book (09/07/2026). Tap a product to show its barcode full screen for scanning.", 13)
         if (list.isEmpty()) Muted("No products match that search. Try part of the item code or a word from the description.")
         LazyVerticalGrid(
