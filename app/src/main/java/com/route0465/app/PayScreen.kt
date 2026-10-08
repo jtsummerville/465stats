@@ -54,7 +54,7 @@ fun PayScreen(v: Int) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(status, fontSize = 14.sp, color = C.Muted, fontWeight = FontWeight.SemiBold)
-                        Text("${start.format(Fmt.day)} – ${end.format(Fmt.day)}", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                        Text("${start.format(Fmt.day)} –\n${end.format(Fmt.day)}", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 28.sp)
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text("Period total", fontSize = 14.sp, color = C.Muted, fontWeight = FontWeight.SemiBold)
