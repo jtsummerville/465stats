@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -102,31 +103,35 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
         if (s.isEmpty()) items else items.filter { it.code.lowercase().contains(s) || it.name.lowercase().contains(s) }
     }
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = if (typing) 8.dp else 18.dp), verticalArrangement = Arrangement.spacedBy(if (typing) 8.dp else 14.dp)) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = if (typing) 8.dp else 16.dp), verticalArrangement = Arrangement.spacedBy(if (typing) 8.dp else 12.dp)) {
         if (typing) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("$total cases · ${qty.values.count { it > 0 }} items", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
                 SecondaryButton("Hide keyboard") { focus.clearFocus(); typingIn = null }
             }
         }
-        if (!typing) Split(16.dp) {
-            Panel(Modifier.part(1f), bg = C.AmberSoft, line = C.AmberLine) {
-                Text("Order deadline", fontSize = 14.sp, color = C.Amber, fontWeight = FontWeight.SemiBold)
-                Text((if (due == LocalDate.now()) "Today" else due.format(Fmt.day)) + " by midnight", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Tile("Cases ordered", total.toString())
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PrimaryButton("Email order", enabled = items.isNotEmpty()) {
-                        try {
-                            val f = OrderPdf.build(ctx, current(), due)
-                            OrderPdf.email(ctx, f, Prefs.orderEmail(ctx), due, total)
-                            repo.saveOrderHistory(cycle.first, current(), sugg.mapValues { it.value.cases })
-                            message = if (Prefs.orderEmail(ctx).isBlank()) "Tip: set the order email address in Setup so it fills in by itself." else null
-                        } catch (e: Exception) {
-                            message = "Couldn't make the email: ${e.message}"
-                        }
+        if (!typing) {
+            // One full-width card: deadline on the left, cases on the right; Email order full width under it.
+            Panel(Modifier.fillMaxWidth(), bg = C.AmberSoft, line = C.AmberLine, pad = 18.dp) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Order deadline", fontSize = 14.sp, color = C.Amber, fontWeight = FontWeight.SemiBold)
+                        Text((if (due == LocalDate.now()) "Today" else due.format(Fmt.day)) + " by midnight", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
                     }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("Cases ordered", fontSize = 14.sp, color = C.Amber, fontWeight = FontWeight.SemiBold)
+                        Text(total.toString(), fontSize = 30.sp, fontWeight = FontWeight.ExtraBold)
+                    }
+                }
+            }
+            PrimaryButton("Email order", Modifier.fillMaxWidth(), enabled = items.isNotEmpty()) {
+                try {
+                    val f = OrderPdf.build(ctx, current(), due)
+                    OrderPdf.email(ctx, f, Prefs.orderEmail(ctx), due, total)
+                    repo.saveOrderHistory(cycle.first, current(), sugg.mapValues { it.value.cases })
+                    message = if (Prefs.orderEmail(ctx).isBlank()) "Tip: set the order email address in Setup so it fills in by itself." else null
+                } catch (e: Exception) {
+                    message = "Couldn't make the email: ${e.message}"
                 }
             }
         }
@@ -147,18 +152,18 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                         "Clear all", color = C.Red, fontWeight = FontWeight.Bold, fontSize = 15.sp,
                         modifier = Modifier.clickable { confirmClear = true }.padding(10.dp),
                     )
-                    PrimaryButton("Done") { focus.clearFocus(); typingIn = null; editing = false }
+                    PrimaryButton("Done", Modifier.height(56.dp)) { focus.clearFocus(); typingIn = null; editing = false }
                 } else {
-                    SecondaryButton("Edit order") { editing = true }
+                    SecondaryButton("Edit order", Modifier.height(56.dp)) { editing = true }
                 }
             }
-            Text(
-                "${qty.values.count { it > 0 }} items · $total cases · ${items.count { flagged(it.code) }} flags · ${ran.values.count { it.first }} ran short",
-                fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-            )
-            Muted(
-                if (editing) "Type the cases or use − +. Tap Done to lock it." else "Locked. Tap Edit order to change quantities.", 13,
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    "${qty.values.count { it > 0 }} items · $total cases · ${items.count { flagged(it.code) }} flags · ${ran.values.count { it.first }} ran short",
+                    fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                )
+                Muted(if (editing) "Type the cases or use − +. Tap Done to lock it." else "Locked. Tap Edit order to change quantities.", 13)
+            }
             }
             Panel(Modifier.weight(1f).fillMaxWidth(), pad = 0.dp) {
                 LazyColumn(Modifier.fillMaxSize()) {
