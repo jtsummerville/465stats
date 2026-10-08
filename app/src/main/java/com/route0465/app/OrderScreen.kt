@@ -51,6 +51,7 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
     var message by remember { mutableStateOf<String?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
     var q by remember { mutableStateOf("") }
+    var editing by remember { mutableStateOf(false) }
     // Quantities live here while you type; each change is saved straight away.
     val qty = remember(v) { mutableStateMapOf<String, Int>().apply { items.forEach { put(it.code, it.qty) } } }
     val total = qty.values.sum()
@@ -79,15 +80,6 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                             message = "Couldn't make the email: ${e.message}"
                         }
                     }
-                    SecondaryButton("Save PDF", enabled = items.isNotEmpty()) {
-                        message = try {
-                            val f = OrderPdf.build(ctx, current(), due)
-                            OrderPdf.saveToDownloads(ctx, f)
-                            "Saved ${f.name} to Downloads."
-                        } catch (e: Exception) {
-                            "Couldn't save the PDF: ${e.message}"
-                        }
-                    }
                 }
             }
         }
@@ -102,12 +94,20 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
         } else {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(q, { q = it }, Modifier.weight(1f), singleLine = true, label = { Text("Find a product") })
-                Text(
-                    "Clear all", color = C.Red, fontWeight = FontWeight.Bold, fontSize = 15.sp,
-                    modifier = Modifier.clickable { confirmClear = true }.padding(10.dp),
-                )
+                if (editing) {
+                    Text(
+                        "Clear all", color = C.Red, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                        modifier = Modifier.clickable { confirmClear = true }.padding(10.dp),
+                    )
+                    PrimaryButton("Done") { editing = false }
+                } else {
+                    SecondaryButton("Edit order") { editing = true }
+                }
             }
-            Muted("Type the cases or use − +. On hand is from the last import${stockDate?.let { " (" + it.format(Fmt.day) + ")" } ?: ""}.", 13)
+            Muted(
+                (if (editing) "Type the cases or use − +. Tap Done to lock it." else "Locked. Tap Edit order to change quantities.") +
+                    " On hand is from the last import${stockDate?.let { " (" + it.format(Fmt.day) + ")" } ?: ""}.", 13,
+            )
             Panel(Modifier.weight(1f).fillMaxWidth(), pad = 0.dp) {
                 LazyColumn(Modifier.fillMaxSize()) {
                     itemsIndexed(shown, key = { _, x -> x.code }) { i, item ->
@@ -128,9 +128,16 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                                 )
                             }
                             val n = qty[item.code] ?: 0
-                            StepButton("−", dark = false) { setQty(item.code, n - 1) }
-                            QtyField(n) { setQty(item.code, it) }
-                            StepButton("+", dark = true) { setQty(item.code, n + 1) }
+                            if (editing) {
+                                StepButton("−", dark = false) { setQty(item.code, n - 1) }
+                                QtyField(n) { setQty(item.code, it) }
+                                StepButton("+", dark = true) { setQty(item.code, n + 1) }
+                            } else {
+                                Text(
+                                    if (n == 0) "—" else "$n cs", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold,
+                                    color = if (n == 0) C.Line else C.Ink, textAlign = TextAlign.End, modifier = Modifier.width(96.dp),
+                                )
+                            }
                         }
                     }
                 }
