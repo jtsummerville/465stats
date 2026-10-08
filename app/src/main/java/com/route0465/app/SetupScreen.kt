@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -693,12 +694,10 @@ private fun OrderGuideSection(v: Int, bump: () -> Unit, back: () -> Unit) {
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionTop("Order guide", back) {
-            if (!editing) SecondaryButton("Edit") { editing = true } else PrimaryButton("Done") { editing = false }
-        }
+        SectionTop("Order guide", back)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedTextField(q, { q = it }, Modifier.weight(1f), singleLine = true, label = { Text("Find in your order guide") })
-            Muted("${items.size} products", 14)
+            if (!editing) SecondaryButton("Edit", Modifier.height(56.dp)) { editing = true } else PrimaryButton("Done", Modifier.height(56.dp)) { editing = false }
         }
         if (editing) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -706,9 +705,10 @@ private fun OrderGuideSection(v: Int, bump: () -> Unit, back: () -> Unit) {
                 SecondaryButton("Load list from file") { filePicker.launch(arrayOf("text/*", "text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/octet-stream")) }
                 if (items.isNotEmpty()) SecondaryButton("Clear all") { confirmClear = true }
             }
-            Muted("Tap a product to move it to any position. Use ▲ ▼ for small moves.", 13)
-        } else {
-            Muted("Locked. Tap Edit to add, remove or reorder products.", 13)
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("${items.size} products", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Muted(if (editing) "Tap a product to move it to any position. Use ▲ ▼ for small moves." else "Locked. Tap Edit to add, remove or reorder products.", 13)
         }
         msg?.let { Banner(it, C.AmberSoft, C.Amber) }
 
