@@ -2,6 +2,8 @@ package com.route0465.app
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -119,10 +121,8 @@ fun PromosScreen(v: Int, bump: () -> Unit) {
                 OutlinedTextField(type, { type = it }, Modifier.fillMaxWidth(), singleLine = true,
                     label = { Text("Sale type or deal, e.g. BOGO, 2 for \$5, Rollback") })
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(start, { start = it }, Modifier.weight(1f), label = { Text("Starts MM/DD/YYYY") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
-                    OutlinedTextField(end, { end = it }, Modifier.weight(1f), label = { Text("Ends MM/DD/YYYY") }, singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    CalendarField("Starts", start, null, Modifier.weight(1f)) { start = it }
+                    CalendarField("Ends", end, parseLooseDate(start, today), Modifier.weight(1f)) { end = it }
                 }
                 Text("Products (${items.size})", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = C.Muted)
                 items.forEach { code ->
@@ -233,4 +233,35 @@ fun bannersFor(storeNames: List<String>): List<String> =
 fun bannerLabel(saved: String): String = when (saved) {
     "All stores", "All banners" -> "All banners"
     else -> if (saved in bannersFor(emptyList())) saved else bannerOf(saved)
+}
+
+
+/** A date box that opens a calendar when tapped. Holds the date as MM/DD/YYYY text. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun CalendarField(label: String, value: String, fallback: LocalDate?, modifier: Modifier, onPick: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box(modifier) {
+        OutlinedTextField(
+            value, {}, Modifier.fillMaxWidth(), readOnly = true, singleLine = true,
+            label = { Text(label) }, placeholder = { Text("Tap to pick") },
+            trailingIcon = { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Default.DateRange, contentDescription = null, tint = C.Green) },
+        )
+        // Covers the box so a tap opens the calendar instead of the keyboard.
+        Box(Modifier.matchParentSize().clickable { open = true })
+    }
+    if (open) {
+        val start = parseLooseDate(value) ?: fallback ?: LocalDate.now()
+        val state = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = start.toEpochDay() * 86_400_000L)
+        androidx.compose.material3.DatePickerDialog(
+            onDismissRequest = { open = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let { ms -> onPick(LocalDate.ofEpochDay(ms / 86_400_000L).format(Fmt.mdy)) }
+                    open = false
+                }) { Text("OK", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { open = false }) { Text("Cancel") } },
+        ) { androidx.compose.material3.DatePicker(state = state) }
+    }
 }
