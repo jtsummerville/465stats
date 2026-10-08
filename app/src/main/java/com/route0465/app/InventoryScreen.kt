@@ -48,7 +48,8 @@ fun InventoryScreen(v: Int) {
 
             if (tab == 0) {
                 Panel {
-                    val w = listOf(0.8f, 3f, 1f, 1f, 1f)
+                    // Code never wraps; the description is a little smaller to make room.
+                    val w = listOf(1.15f, 2.65f, 1f, 1f, 1f)
                     TableRow(listOf("Code", "Product", "Each on hand", "Case pack", "Cases"), w, header = true, endAligned = setOf(2, 3, 4))
                     stock.forEach { s ->
                         HorizontalDivider(color = C.Divider)
@@ -56,6 +57,7 @@ fun InventoryScreen(v: Int) {
                             listOf(s.code, s.name, Fmt.qty(s.onHand), Fmt.qty(s.casePack), Fmt.one(s.cases)), w,
                             bold = setOf(4), endAligned = setOf(2, 3, 4),
                             bg = if (s.onHand <= 0.0) C.RedSoft else Color.Transparent,
+                            oneLine = setOf(0), small = setOf(1),
                         )
                     }
                 }

@@ -164,12 +164,14 @@ fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
 
 /** A row in a simple table. Weights line the columns up. */
 @Composable
-fun TableRow(cells: List<String>, weights: List<Float>, bold: Set<Int> = emptySet(), header: Boolean = false, bg: Color = Color.Transparent, endAligned: Set<Int> = emptySet(), color: Color = C.Ink) {
+fun TableRow(cells: List<String>, weights: List<Float>, bold: Set<Int> = emptySet(), header: Boolean = false, bg: Color = Color.Transparent, endAligned: Set<Int> = emptySet(), color: Color = C.Ink, oneLine: Set<Int> = emptySet(), small: Set<Int> = emptySet()) {
     Row(Modifier.fillMaxWidth().background(bg).padding(vertical = if (header) 8.dp else 11.dp), verticalAlignment = Alignment.CenterVertically) {
         cells.forEachIndexed { i, t ->
             Text(
                 t, modifier = Modifier.weight(weights[i]).padding(end = 8.dp),
-                fontSize = if (header) 13.sp else 16.sp,
+                fontSize = if (header) 13.sp else if (i in small) 14.sp else 16.sp,
+                maxLines = if (i in oneLine) 1 else Int.MAX_VALUE,
+                softWrap = i !in oneLine,
                 fontWeight = if (header) FontWeight.SemiBold else if (i in bold) FontWeight.ExtraBold else FontWeight.Normal,
                 color = if (header) C.Muted else color,
                 textAlign = if (i in endAligned) TextAlign.End else TextAlign.Start,
