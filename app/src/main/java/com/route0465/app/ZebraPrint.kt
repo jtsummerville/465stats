@@ -277,7 +277,8 @@ object SheetLayout {
         fun line(x0: Int, y: Int, x1: Int, w: Int) { ops += L(x0, y, x1, w) }
 
         fun cpcl(dots: Int): String {
-            val sb = StringBuilder("! 0 200 200 $h 1\r\nPAGE-WIDTH $dots\r\n")
+            // JOURNAL = continuous receipt roll: no hunting for label gaps, no backing up over what already printed.
+            val sb = StringBuilder("! 0 200 200 $h 1\r\nPAGE-WIDTH $dots\r\nJOURNAL\r\n")
             for (o in ops) when (o) {
                 is T -> {
                     val (font, size) = when (o.size) { Size.Small -> 7 to 0; Size.Big -> 4 to 0; Size.Huge -> 4 to 1 }
@@ -294,7 +295,8 @@ object SheetLayout {
         }
 
         fun zpl(dots: Int): String {
-            val sb = StringBuilder("^XA^PW$dots^LL$h^LH0,0^CI0\n")
+            // ^MNN = continuous media for this print only (not saved to the printer).
+            val sb = StringBuilder("^XA^MNN^PW$dots^LL$h^LH0,0^CI0\n")
             for (o in ops) when (o) {
                 is T -> {
                     val px = when (o.size) { Size.Small -> 24; Size.Big -> 46; Size.Huge -> 92 }
