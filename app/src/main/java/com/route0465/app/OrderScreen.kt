@@ -43,6 +43,13 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import java.time.LocalDate
+import android.view.ViewTreeObserver
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalFocusManager
 
 @Composable
 fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
@@ -64,6 +71,24 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
     var confirmClear by remember { mutableStateOf(false) }
     var q by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf(false) }
+    // Which number box has the keyboard. While one does, the top of the screen folds away so the list gets the room.
+    var typingIn by remember { mutableStateOf<String?>(null) }
+    val typing = editing && typingIn != null
+    val focus = LocalFocusManager.current
+    val wide = LocalWide.current
+    val onFocus = { key: String, has: Boolean -> if (has) typingIn = key else if (typingIn == key) typingIn = null }
+    // Keyboard closed with the Back key: let go of the box so the top of the screen comes back.
+    val view = LocalView.current
+    DisposableEffect(view) {
+        var wasOpen = false
+        val l = ViewTreeObserver.OnGlobalLayoutListener {
+            val open = ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+            if (wasOpen && !open) { focus.clearFocus(); typingIn = null }
+            wasOpen = open
+        }
+        view.viewTreeObserver.addOnGlobalLayoutListener(l)
+        onDispose { view.viewTreeObserver.removeOnGlobalLayoutListener(l) }
+    }
     // Quantities live here while you type; each change is saved straight away.
     val qty = remember(v) { mutableStateMapOf<String, Int>().apply { items.forEach { put(it.code, it.qty) } } }
     val total = qty.values.sum()
@@ -78,8 +103,14 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
         if (s.isEmpty()) items else items.filter { it.code.lowercase().contains(s) || it.name.lowercase().contains(s) }
     }
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Split(16.dp) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = if (typing) 8.dp else 18.dp), verticalArrangement = Arrangement.spacedBy(if (typing) 8.dp else 14.dp)) {
+        if (typing) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("$total cases · ${qty.values.count { it > 0 }} items", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+                SecondaryButton("Hide keyboard") { focus.clearFocus(); typingIn = null }
+            }
+        }
+        if (!typing) Split(16.dp) {
             Panel(Modifier.part(1f), bg = C.AmberSoft, line = C.AmberLine) {
                 Text("Order deadline", fontSize = 14.sp, color = C.Amber, fontWeight = FontWeight.SemiBold)
                 Text((if (due == LocalDate.now()) "Today" else due.format(Fmt.day)) + " by midnight", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
@@ -100,7 +131,7 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                 }
             }
         }
-        message?.let { Banner(it, C.GreenSoft, C.GreenDark) }
+        if (!typing) message?.let { Banner(it, C.GreenSoft, C.GreenDark) }
 
         if (items.isEmpty()) {
             Panel {
@@ -109,6 +140,7 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                 SecondaryButton("Go to Setup") { go(Screen.Setup) }
             }
         } else {
+            if (!typing) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(q, { q = it }, Modifier.weight(1f), singleLine = true, label = { Text("Find a product") })
                 if (editing) {
@@ -116,7 +148,7 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                         "Clear all", color = C.Red, fontWeight = FontWeight.Bold, fontSize = 15.sp,
                         modifier = Modifier.clickable { confirmClear = true }.padding(10.dp),
                     )
-                    PrimaryButton("Done") { editing = false }
+                    PrimaryButton("Done") { focus.clearFocus(); typingIn = null; editing = false }
                 } else {
                     SecondaryButton("Edit order") { editing = true }
                 }
@@ -139,6 +171,7 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                     " On hand is from the last import${stockDate?.let { " (" + it.format(Fmt.day) + ")" } ?: ""}." +
                     " Promo tags are for delivery ${cycle.first.format(Fmt.day)} – ${cycle.second.minusDays(1).format(Fmt.day)}: filled = stock up, outlined = light bump. Tap a tag for details.", 13,
             )
+            }
             Panel(Modifier.weight(1f).fillMaxWidth(), pad = 0.dp) {
                 LazyColumn(Modifier.fillMaxSize()) {
                     itemsIndexed(shown, key = { _, x -> x.code }) { i, item ->
@@ -174,11 +207,11 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.width(22.dp).clip(RoundedCornerShape(6.dp)).background(if (flagged(item.code)) C.Red else Color.Transparent),
                             )
-                            if (editing) {
+                            if (editing && wide) {
                                 StepButton("−", dark = false) { setQty(item.code, n - 1) }
-                                QtyField(n) { setQty(item.code, it) }
+                                QtyField(n, item.code, onFocus) { setQty(item.code, it) }
                                 StepButton("+", dark = true) { setQty(item.code, n + 1) }
-                            } else {
+                            } else if (!editing) {
                                 Text(
                                     if (n == 0) "—" else "$n cs", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold,
                                     color = if (n == 0) C.Line else C.Ink, textAlign = TextAlign.End, modifier = Modifier.width(96.dp),
@@ -187,15 +220,22 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                         }
                         val (isShort, by) = ran[item.code] ?: (false to 0)
                         if (editing) {
-                            Row(Modifier.padding(start = 70.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val n = qty[item.code] ?: 0
+                            Row(Modifier.fillMaxWidth().padding(start = if (wide) 70.dp else 0.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Row(Modifier.clickable { setRan(item.code, !isShort, by) }, verticalAlignment = Alignment.CenterVertically) {
                                     Checkbox(isShort, { setRan(item.code, it, by) }, colors = CheckboxDefaults.colors(checkedColor = C.Amber))
-                                    Text("Ran short last delivery", fontSize = 14.sp)
+                                    Text(if (wide) "Ran short last delivery" else "Ran short", fontSize = 14.sp)
                                 }
                                 if (isShort) {
                                     Text("by", fontSize = 14.sp, color = C.Muted)
-                                    QtyField(by) { setRan(item.code, true, it) }
-                                    Text("cases", fontSize = 14.sp, color = C.Muted)
+                                    QtyField(by, item.code + ":short", onFocus) { setRan(item.code, true, it) }
+                                    Text("cs", fontSize = 14.sp, color = C.Muted)
+                                }
+                                if (!wide) {
+                                    Box(Modifier.weight(1f))
+                                    StepButton("−", dark = false) { setQty(item.code, n - 1) }
+                                    QtyField(n, item.code, onFocus) { setQty(item.code, it) }
+                                    StepButton("+", dark = true) { setQty(item.code, n + 1) }
                                 }
                             }
                         } else if (isShort) {
@@ -231,7 +271,7 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
 
 /** A small number box you can type cases into. Blank counts as 0. */
 @Composable
-private fun QtyField(value: Int, onChange: (Int) -> Unit) {
+private fun QtyField(value: Int, key: String, onFocus: (String, Boolean) -> Unit, onChange: (Int) -> Unit) {
     var text by remember { mutableStateOf(if (value == 0) "" else value.toString()) }
     // Follow − / + presses and Clear all without fighting the cursor while typing.
     LaunchedEffect(value) { if ((text.toIntOrNull() ?: 0) != value) text = if (value == 0) "" else value.toString() }
@@ -242,7 +282,7 @@ private fun QtyField(value: Int, onChange: (Int) -> Unit) {
             text = digits
             onChange(digits.toIntOrNull() ?: 0)
         },
-        modifier = Modifier.width(84.dp),
+        modifier = Modifier.width(84.dp).onFocusChanged { onFocus(key, it.isFocused) },
         singleLine = true,
         placeholder = { Text("0", fontSize = 20.sp, color = C.Line, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
         textStyle = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center),
