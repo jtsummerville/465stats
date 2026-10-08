@@ -44,7 +44,7 @@ fun PromosScreen(v: Int, bump: () -> Unit) {
     val promos = remember(v) { repo.promos() }
     val stores = remember(v) { repo.stores() }
     var product by remember { mutableStateOf<Product?>(null) }
-    var store by remember { mutableStateOf("All stores") }
+    var store by remember { mutableStateOf("All banners") }
     var start by remember { mutableStateOf("") }
     var end by remember { mutableStateOf("") }
     var deal by remember { mutableStateOf("") }
@@ -62,7 +62,7 @@ fun PromosScreen(v: Int, bump: () -> Unit) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("${p.code} ${p.name}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Muted("${p.store} · ${listOf(p.start, p.end).filter { it.isNotBlank() }.joinToString(" – ")}", 14)
+                            Muted("${bannerLabel(p.store)} · ${listOf(p.start, p.end).filter { it.isNotBlank() }.joinToString(" – ")}", 14)
                         }
                         Text(p.deal, color = C.Amber, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         Text("Remove", color = C.Red, fontSize = 14.sp, modifier = Modifier.clickable { deleting = p }.padding(12.dp))
@@ -73,9 +73,9 @@ fun PromosScreen(v: Int, bump: () -> Unit) {
                 H2("Add a promotion")
                 PickField("Product", product?.let { "${it.code} ${it.name}" } ?: "") { picking = true }
                 Box {
-                    PickField("Store", store) { storeMenu = true }
+                    PickField("Banner (applies to every store of that chain)", store) { storeMenu = true }
                     DropdownMenu(expanded = storeMenu, onDismissRequest = { storeMenu = false }) {
-                        (listOf("All stores") + stores.map { it.second }).forEach { s ->
+                        (listOf("All banners") + bannersFor(stores.map { it.second })).forEach { s ->
                             DropdownMenuItem(text = { Text(s) }, onClick = { store = s; storeMenu = false })
                         }
                     }
@@ -152,4 +152,28 @@ fun ShortagesScreen(v: Int, bump: () -> Unit) {
         ConfirmDialog("Remove this shortage?", "${s.code} ${s.name} · ${Fmt.qty(s.qty)} cs", "Remove",
             onConfirm = { repo.deleteShortage(s.id); bump() }, onDismiss = { deleting = null })
     }
+}
+
+/** The chain a store belongs to: "KROGER #429-SHARONVILLE,OH" → "Kroger". */
+fun bannerOf(storeName: String): String {
+    val u = storeName.uppercase()
+    return when {
+        u.startsWith("KROGER") -> "Kroger"
+        u.startsWith("WALMART") || u.startsWith("WAL-MART") || u.startsWith("WAL MART") -> "Walmart"
+        u.startsWith("SAM'S") || u.startsWith("SAMS") || u.startsWith("SAM ") -> "Sam's Club"
+        u.startsWith("TARGET") -> "Target"
+        u.startsWith("JUNGLE JIM") -> "Jungle Jim's"
+        else -> storeName.substringBefore('#').substringBefore('-').trim()
+            .lowercase().split(' ').filter { it.isNotEmpty() }.joinToString(" ") { w -> w.replaceFirstChar { it.uppercase() } }
+    }
+}
+
+/** Banners on this route, plus the usual ones, in a steady order. */
+fun bannersFor(storeNames: List<String>): List<String> =
+    (listOf("Kroger", "Walmart", "Sam's Club", "Target", "Jungle Jim's") + storeNames.map { bannerOf(it) }).filter { it.isNotBlank() }.distinct()
+
+/** Older promos saved with a single store name show as that store's banner. */
+fun bannerLabel(saved: String): String = when (saved) {
+    "All stores", "All banners" -> "All banners"
+    else -> if (saved in bannersFor(emptyList())) saved else bannerOf(saved)
 }
