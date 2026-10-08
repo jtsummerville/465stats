@@ -861,6 +861,7 @@ private fun PrinterSection(back: () -> Unit) {
     var name by remember { mutableStateOf(PrinterPrefs.name(ctx)) }
     var lang by remember { mutableStateOf(PrinterPrefs.language(ctx)) }
     var width by remember { mutableStateOf(PrinterPrefs.widthDots(ctx)) }
+    var feed by remember { mutableStateOf(PrinterPrefs.feedDots(ctx)) }
     var choosing by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
@@ -877,6 +878,7 @@ private fun PrinterSection(back: () -> Unit) {
                 val det = PrinterPrefs.detected(ctx)
                 ReadRow("Printer language", PrinterPrefs.langLabel(l) + if (l == "auto" && det.isNotBlank()) " (found ${det.uppercase()})" else "")
                 ReadRow("Paper width", PrinterPrefs.widthLabel(PrinterPrefs.widthDots(ctx)))
+                ReadRow("Paper fed out at the end", PrinterPrefs.feedLabel(PrinterPrefs.feedDots(ctx)))
             } else {
                 PickField("Printer", if (name.isBlank()) "" else "$name  ·  $addr") { gate { choosing = true } }
                 Text("Printer language", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = C.Muted)
@@ -884,17 +886,20 @@ private fun PrinterSection(back: () -> Unit) {
                 Muted("Auto asks the printer. Pick CPCL or ZPL only if Auto prints garbled text.", 13)
                 Text("Paper width", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = C.Muted)
                 Segmented(PrinterPrefs.WIDTHS.map { it.second }, PrinterPrefs.WIDTHS.indexOfFirst { it.first == width }.coerceAtLeast(0)) { width = PrinterPrefs.WIDTHS[it].first }
+                Text("Paper fed out at the end", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = C.Muted)
+                Segmented(PrinterPrefs.FEEDS.map { it.second }, PrinterPrefs.FEEDS.indexOfFirst { it.first == feed }.coerceAtLeast(0)) { feed = PrinterPrefs.FEEDS[it].first }
+                Muted("Pick Long if the end of the sheet is still inside the printer when it stops.", 13)
             }
             EditSaveRow(
                 editing,
                 onEdit = {
-                    addr = PrinterPrefs.address(ctx); name = PrinterPrefs.name(ctx); lang = PrinterPrefs.language(ctx); width = PrinterPrefs.widthDots(ctx)
+                    addr = PrinterPrefs.address(ctx); name = PrinterPrefs.name(ctx); lang = PrinterPrefs.language(ctx); width = PrinterPrefs.widthDots(ctx); feed = PrinterPrefs.feedDots(ctx)
                     msg = null; editing = true
                 },
                 onCancel = { editing = false; msg = null },
                 onSave = {
                     if (addr != PrinterPrefs.address(ctx)) PrinterPrefs.setPrinter(ctx, addr, name)
-                    PrinterPrefs.setLanguage(ctx, lang); PrinterPrefs.setWidthDots(ctx, width)
+                    PrinterPrefs.setLanguage(ctx, lang); PrinterPrefs.setWidthDots(ctx, width); PrinterPrefs.setFeedDots(ctx, feed)
                     editing = false; msg = null; shown++
                 },
             )
@@ -908,7 +913,7 @@ private fun PrinterSection(back: () -> Unit) {
                         busy = true; msg = null
                         scope.launch {
                             val sample = runCatching { Upc.all(ctx).firstOrNull { it.upc.isNotEmpty() } }.getOrNull()
-                            val r = withContext(Dispatchers.IO) { runCatching { Zebra.print(ctx) { l, d -> SheetLayout.test(l, d, sample) } } }
+                            val r = withContext(Dispatchers.IO) { runCatching { Zebra.print(ctx) { l, d, f -> SheetLayout.test(l, d, f, sample) } } }
                             busy = false; shown++
                             msg = r.fold({ "Test sent using ${it.uppercase()}." to true }, { (it.message ?: "Printing failed.") to false })
                         }

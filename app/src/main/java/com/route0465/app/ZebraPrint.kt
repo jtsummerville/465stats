@@ -35,6 +35,12 @@ object PrinterPrefs {
     fun widthDots(ctx: Context): Int = sp(ctx).getInt("width", 832)
     fun setWidthDots(ctx: Context, v: Int) = sp(ctx).edit().putInt("width", v).apply()
 
+    /** Blank paper fed after the last line so the end clears the tear bar, in dots (203 per inch). */
+    fun feedDots(ctx: Context): Int = sp(ctx).getInt("feed", 300)
+    fun setFeedDots(ctx: Context, v: Int) = sp(ctx).edit().putInt("feed", v).apply()
+    val FEEDS = listOf(150 to "Short", 300 to "Medium", 450 to "Long")
+    fun feedLabel(d: Int) = FEEDS.firstOrNull { it.first == d }?.second ?: "$d dots"
+
     val WIDTHS = listOf(384 to "2 inch", 576 to "3 inch", 832 to "4 inch")
     val LANGS = listOf("auto" to "Auto", "cpcl" to "CPCL", "zpl" to "ZPL")
     fun widthLabel(d: Int) = WIDTHS.firstOrNull { it.first == d }?.second ?: "$d dots"
@@ -135,7 +141,7 @@ object Zebra {
     }
 
     /** Sends a job built for whichever language the printer speaks. Returns the language used. Runs on a background thread. */
-    fun print(ctx: Context, build: (lang: String, dots: Int) -> String): String {
+    fun print(ctx: Context, build: (lang: String, dots: Int, feed: Int) -> String): String {
         val address = PrinterPrefs.address(ctx)
         if (address.isBlank()) throw Exception("No printer chosen yet. Pick it in Setup › Printer.")
         if (needsPermission(ctx)) throw Exception("465stats needs the Nearby devices permission to use the printer.")
@@ -147,7 +153,7 @@ object Zebra {
                 lang = ask(s).ifEmpty { PrinterPrefs.detected(ctx) }.ifEmpty { "cpcl" }
                 PrinterPrefs.setDetected(ctx, lang)
             }
-            val bytes = build(lang, dots).toByteArray(Charsets.US_ASCII)
+            val bytes = build(lang, dots, PrinterPrefs.feedDots(ctx)).toByteArray(Charsets.US_ASCII)
             val out = s.outputStream
             var i = 0
             while (i < bytes.size) {
@@ -172,25 +178,25 @@ object SheetLayout {
 
     private const val M = 16
 
-    fun build(lang: String, dots: Int, p: SheetPrint): String {
+    fun build(lang: String, dots: Int, feed: Int, p: SheetPrint): String {
         val total = p.lines.sumOf { it.qty }
         val sb = StringBuilder()
         val pages = mutableListOf<Page>()
         pages += header(dots, p, total)
         p.lines.forEach { pages += product(dots, it) }
-        pages += footer(dots, p.lines.size, total)
+        pages += footer(dots, p.lines.size, total, feed)
         pages.forEach { sb.append(if (lang == "zpl") it.zpl(dots) else it.cpcl(dots)) }
         return sb.toString()
     }
 
-    fun test(lang: String, dots: Int, sample: UpcItem?): String {
+    fun test(lang: String, dots: Int, feed: Int, sample: UpcItem?): String {
         val pages = mutableListOf<Page>()
         val pg = Page(110)
         pg.text(M, 10, Size.Big, "465stats test print", center = true)
         pg.text(M, 66, Size.Small, clean("Language ${lang.uppercase()} - paper ${PrinterPrefs.widthLabel(dots)}", 60), center = true)
         pages += pg
         if (sample != null) pages += product(dots, SheetLine(sample.code, sample.desc, sample.upc, sample.casePack, 12))
-        pages += Page(100).also { it.text(M, 10, Size.Small, "If the barcode above scans, you're set.", center = true) }
+        pages += Page(60 + feed).also { it.text(M, 10, Size.Small, "If the barcode above scans, you're set.", center = true) }
         return pages.joinToString("") { if (lang == "zpl") it.zpl(dots) else it.cpcl(dots) }
     }
 
@@ -233,8 +239,9 @@ object SheetLayout {
         return pg
     }
 
-    private fun footer(dots: Int, n: Int, total: Int): Page {
-        val pg = Page(170)
+    private fun footer(dots: Int, n: Int, total: Int, feed: Int): Page {
+        // The blank space under the total is what pushes the paper out past the tear bar.
+        val pg = Page(100 + feed)
         pg.text(M, 14, Size.Big, "TOTAL  $total EACHES")
         pg.text(M, 66, Size.Small, "$n product" + if (n == 1) "" else "s")
         return pg
