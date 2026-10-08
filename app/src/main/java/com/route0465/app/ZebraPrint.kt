@@ -215,14 +215,14 @@ object SheetLayout {
         val bx = M + quiet
         val bw = 95 * module
         val smallChars = (dots - 2 * M) / 12
-        val qx = bx + bw + quiet + 24
+        val qx = bx + bw + quiet + 40
         val side = qx + 190 <= dots
         val topBar = 40
-        val barBottom = topBar + barH + 30
+        val barBottom = topBar + barH + 44
         val h = if (side) barBottom + 18 else barBottom + 70
         val pg = Page(h)
         pg.text(M, 8, Size.Small, clean("${l.code}  ${l.desc}", smallChars))
-        pg.upc(bx, topBar, module, barH, l.upc.take(11))
+        pg.upc(bx, topBar, module, barH, l.upc)
         if (side) {
             pg.text(qx, topBar, Size.Small, "EACHES")
             pg.text(qx, topBar + 30, Size.Huge, l.qty.toString())
@@ -245,12 +245,28 @@ object SheetLayout {
     private class Page(val h: Int) {
         private sealed class Op
         private class T(val x: Int, val y: Int, val size: Size, val s: String, val center: Boolean) : Op()
-        private class B(val x: Int, val y: Int, val module: Int, val h: Int, val data: String) : Op()
+        /** A solid black bar, drawn exactly so barcodes come out the same width on every printer. */
+        private class B(val x: Int, val y: Int, val w: Int, val h: Int) : Op()
         private class L(val x0: Int, val y: Int, val x1: Int, val w: Int) : Op()
         private val ops = mutableListOf<Op>()
 
         fun text(x: Int, y: Int, size: Size, s: String, center: Boolean = false) { ops += T(x, y, size, s, center) }
-        fun upc(x: Int, y: Int, module: Int, h: Int, data11: String) { ops += B(x, y, module, h, data11) }
+        /** UPC-A drawn bar by bar from the 12-digit UPC, guard bars a little longer, digits underneath. */
+        fun upc(x: Int, y: Int, module: Int, h: Int, upc12: String) {
+            val bits = Upc.bits(upc12)
+            var i = 0
+            while (i < 95) {
+                if (bits[i] == '1') {
+                    var j = i
+                    while (j < 95 && bits[j] == '1') j++
+                    val guard = Upc.isGuard(i)
+                    ops += B(x + i * module, y, (j - i) * module, if (guard) h + 12 else h)
+                    i = j
+                } else i++
+            }
+            val digits = "${upc12[0]} ${upc12.substring(1, 6)} ${upc12.substring(6, 11)} ${upc12[11]}"
+            ops += T(x + (95 * module - digits.length * 12) / 2, y + h + 14, Size.Small, digits, false)
+        }
         fun line(x0: Int, y: Int, x1: Int, w: Int) { ops += L(x0, y, x1, w) }
 
         fun cpcl(dots: Int): String {
@@ -262,7 +278,8 @@ object SheetLayout {
                     sb.append("TEXT $font $size ${if (o.center) 0 else o.x} ${o.y} ${o.s}\r\n")
                     if (o.center) sb.append("LEFT\r\n")
                 }
-                is B -> sb.append("BARCODE-TEXT 7 0 4\r\nBARCODE UPCA ${o.module} 1 ${o.h} ${o.x} ${o.y} ${o.data}\r\nBARCODE-TEXT OFF\r\n")
+                // One-dot-wide vertical lines side by side: no guessing which way a thick line grows.
+                is B -> for (dx in 0 until o.w) sb.append("LINE ${o.x + dx} ${o.y} ${o.x + dx} ${o.y + o.h} 1\r\n")
                 is L -> sb.append("LINE ${o.x0} ${o.y} ${o.x1} ${o.y} ${o.w}\r\n")
             }
             sb.append("PRINT\r\n")
@@ -277,7 +294,7 @@ object SheetLayout {
                     if (o.center) sb.append("^FO0,${o.y}^FB$dots,1,0,C,0^A0N,$px,$px^FD${o.s}^FS\n")
                     else sb.append("^FO${o.x},${o.y}^A0N,$px,$px^FD${o.s}^FS\n")
                 }
-                is B -> sb.append("^FO${o.x},${o.y}^BY${o.module}^BUN,${o.h},Y,N,Y^FD${o.data}^FS\n")
+                is B -> sb.append("^FO${o.x},${o.y}^GB${o.w},${o.h},${o.w}^FS\n")
                 is L -> sb.append("^FO${o.x0},${o.y}^GB${o.x1 - o.x0},${o.w},${o.w}^FS\n")
             }
             sb.append("^XZ\n")
