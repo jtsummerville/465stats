@@ -54,12 +54,12 @@ fun PayScreen(v: Int) {
             SecondaryButton("›", Modifier.size(56.dp), enabled = offset < 0) { offset += 1 }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        Split {
             for (w in 0..1) {
                 val wStart = start.plusDays(w * 7L)
                 val wEnd = wStart.plusDays(6)
                 val wDays = inPeriod.filter { !it.date.isBefore(wStart) && !it.date.isAfter(wEnd) }.sortedBy { it.date }
-                Panel(Modifier.weight(1f)) {
+                Panel(Modifier.part(1f)) {
                     Row(Modifier.fillMaxWidth()) {
                         Text("Week ${w + 1} · ${wStart.format(Fmt.md)} – ${wEnd.format(Fmt.md)}", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
                         Text(Fmt.money(wDays.sumOf { it.pay }), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)

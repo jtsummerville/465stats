@@ -84,8 +84,8 @@ fun HomeScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            Panel(Modifier.weight(1.25f), pad = 26.dp) {
+        Split {
+            Panel(Modifier.part(1.25f), pad = 26.dp) {
                 H2("Import today's route")
                 Muted("Run End of Day in XSales first, then tap below. The app copies the XSales backup files, checks they're dated today, and reads only today's tickets.")
                 PrimaryButton(if (busy) "Importing…" else "End of Day", Modifier.fillMaxWidth(), enabled = !busy && access, big = true) {
@@ -120,7 +120,7 @@ fun HomeScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                 backups?.forEach { line -> Muted(line, 14) }
             }
 
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(Modifier.part(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 val todayDay = days.firstOrNull { it.date == today }
                 val pStart = Periods.startOf(today)
                 val periodPay = days.filter { !it.date.isBefore(pStart) && it.date.isBefore(pStart.plusDays(14)) }.sumOf { it.pay }

@@ -43,11 +43,12 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
     val total = items.sumOf { it.qty }
 
     ScreenColumn {
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Panel(Modifier.weight(1f), bg = C.AmberSoft, line = C.AmberLine) {
+        Split(16.dp) {
+            Panel(Modifier.part(1f), bg = C.AmberSoft, line = C.AmberLine) {
                 Text("Order deadline", fontSize = 14.sp, color = C.Amber, fontWeight = FontWeight.SemiBold)
                 Text((if (due == LocalDate.now()) "Today" else due.format(Fmt.day)) + " by midnight", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Tile("Cases ordered", total.toString())
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PrimaryButton("Email order", enabled = items.isNotEmpty()) {
@@ -68,6 +69,7 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                         "Couldn't save the PDF: ${e.message}"
                     }
                 }
+            }
             }
         }
         message?.let { Banner(it, C.GreenSoft, C.GreenDark) }

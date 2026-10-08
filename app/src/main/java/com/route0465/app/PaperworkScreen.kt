@@ -101,8 +101,8 @@ fun PaperworkScreen(v: Int, bump: () -> Unit, shareMsg: MutableState<String?>) {
                 Text("Dismiss", color = C.Green, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { shareMsg.value = null }.padding(vertical = 6.dp))
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            Panel(Modifier.weight(1.4f)) {
+        Split {
+            Panel(Modifier.part(1.4f)) {
                 H2("Store paperwork · ${today.format(Fmt.day)}")
                 Muted("At each store, tap Take photo and shoot every page the store prints. Photos go into one PDF, in the order you take them.", 14)
                 if (stores.isEmpty()) Muted("Your stores load with your first End of Day import. Until then, type the store name below.", 14)
@@ -133,7 +133,7 @@ fun PaperworkScreen(v: Int, bump: () -> Unit, shareMsg: MutableState<String?>) {
                 }
             }
 
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            Column(Modifier.part(1f), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                 Panel {
                     H2("XSales End of Day PDF")
                     if (eod != null) {

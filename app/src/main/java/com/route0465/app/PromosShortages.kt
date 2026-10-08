@@ -53,8 +53,8 @@ fun PromosScreen(v: Int, bump: () -> Unit) {
     var deleting by remember { mutableStateOf<Promo?>(null) }
 
     ScreenColumn {
-        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            Panel(Modifier.weight(1.4f)) {
+        Split {
+            Panel(Modifier.part(1.4f)) {
                 H2("Promotions")
                 if (promos.isEmpty()) Muted("None yet. Add one on the right.")
                 promos.forEach { p ->
@@ -69,7 +69,7 @@ fun PromosScreen(v: Int, bump: () -> Unit) {
                     }
                 }
             }
-            Panel(Modifier.weight(1f)) {
+            Panel(Modifier.part(1f)) {
                 H2("Add a promotion")
                 PickField("Product", product?.let { "${it.code} ${it.name}" } ?: "") { picking = true }
                 Box {
@@ -114,8 +114,8 @@ fun ShortagesScreen(v: Int, bump: () -> Unit) {
     val kinds = listOf("Warehouse short", "Missing freight")
 
     ScreenColumn {
-        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            Panel(Modifier.weight(1.4f)) {
+        Split {
+            Panel(Modifier.part(1.4f)) {
                 H2("Shortages")
                 if (list.isEmpty()) Muted("None logged.")
                 list.forEach { s ->
@@ -130,7 +130,7 @@ fun ShortagesScreen(v: Int, bump: () -> Unit) {
                     }
                 }
             }
-            Panel(Modifier.weight(1f)) {
+            Panel(Modifier.part(1f)) {
                 H2("Log a shortage")
                 PickField("Product", product?.let { "${it.code} ${it.name}" } ?: "") { picking = true }
                 OutlinedTextField(

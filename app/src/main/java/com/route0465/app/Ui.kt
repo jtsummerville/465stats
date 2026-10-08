@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -221,4 +222,34 @@ fun ConfirmDialog(title: String, text: String, confirm: String, onConfirm: () ->
         title = { Text(title) },
         text = { Text(text) },
     )
+}
+
+
+/** True when the screen is wide enough for side-by-side panels (tablet held sideways); false when held upright. */
+val LocalWide = compositionLocalOf { true }
+
+interface SplitScope {
+    /** Share of the width when side by side; full width when stacked. */
+    fun Modifier.part(weight: Float): Modifier
+}
+
+/** Side by side when the tablet is sideways, stacked top to bottom when it's upright. */
+@Composable
+fun Split(gap: Dp = 20.dp, content: @Composable SplitScope.() -> Unit) {
+    if (LocalWide.current) {
+        Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+            val row = this
+            val scope = object : SplitScope {
+                override fun Modifier.part(weight: Float): Modifier = with(row) { this@part.weight(weight) }
+            }
+            scope.content()
+        }
+    } else {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            val scope = object : SplitScope {
+                override fun Modifier.part(weight: Float): Modifier = this.fillMaxWidth()
+            }
+            scope.content()
+        }
+    }
 }

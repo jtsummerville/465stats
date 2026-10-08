@@ -42,8 +42,9 @@ fun InventoryScreen(v: Int) {
                 }
                 Tile("Out of stock", "$out items", valueColor = if (out > 0) C.Red else C.Ink)
                 Box(Modifier.weight(1f))
-                Segmented(listOf("On hand", "Inventory Check"), tab) { tab = it }
+                if (LocalWide.current) Segmented(listOf("On hand", "Inventory Check"), tab) { tab = it }
             }
+            if (!LocalWide.current) Segmented(listOf("On hand", "Inventory Check"), tab) { tab = it }
 
             if (tab == 0) {
                 Panel {

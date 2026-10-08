@@ -9,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -37,6 +38,7 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -155,7 +157,9 @@ fun AppRoot(version: MutableState<Int>, goTo: MutableState<Screen?>, shareMsg: M
         }
         Column(Modifier.fillMaxSize()) {
             Header(screen.title, v)
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                // Upright tablet → narrow content → panels stack; sideways → side by side.
+                CompositionLocalProvider(LocalWide provides (maxWidth >= 900.dp)) {
                 when (screen) {
                     Screen.Home -> HomeScreen(v, bump, go)
                     Screen.Paperwork -> PaperworkScreen(v, bump, shareMsg)
@@ -167,6 +171,7 @@ fun AppRoot(version: MutableState<Int>, goTo: MutableState<Screen?>, shareMsg: M
                     Screen.Promos -> PromosScreen(v, bump)
                     Screen.Shortages -> ShortagesScreen(v, bump)
                     Screen.Setup -> SetupScreen(v, bump)
+                }
                 }
             }
         }

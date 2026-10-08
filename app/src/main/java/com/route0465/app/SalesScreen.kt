@@ -66,11 +66,17 @@ private fun SalesBody(v: Int, repo: Db, days: List<DaySummary>, date: LocalDate,
         val wStart = Periods.weekStart(date)
         val weekTotal = days.filter { !it.date.isBefore(wStart) && !it.date.isAfter(date) }.sumOf { it.netSales }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Tile("Net sales", Fmt.money(day?.netSales ?: 0.0), Modifier.weight(1f))
-            Tile("Stores serviced", live.map { it.cusCode }.distinct().size.toString(), Modifier.weight(1f))
-            Tile("Credits", Fmt.money(credits.sumOf { it.net }), Modifier.weight(1f), valueColor = if (credits.isEmpty()) C.Ink else C.Red)
-            Tile("Week so far (Sat–${date.format(Fmt.md)})", Fmt.money(weekTotal), Modifier.weight(1f))
+        // Four across when the tablet is sideways, two by two when it's upright.
+        val tiles: List<@Composable (Modifier) -> Unit> = listOf(
+            { m -> Tile("Net sales", Fmt.money(day?.netSales ?: 0.0), m) },
+            { m -> Tile("Stores serviced", live.map { it.cusCode }.distinct().size.toString(), m) },
+            { m -> Tile("Credits", Fmt.money(credits.sumOf { it.net }), m, valueColor = if (credits.isEmpty()) C.Ink else C.Red) },
+            { m -> Tile("Week so far (Sat–${date.format(Fmt.md)})", Fmt.money(weekTotal), m) },
+        )
+        tiles.chunked(if (LocalWide.current) 4 else 2).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                row.forEach { t -> t(Modifier.weight(1f)) }
+            }
         }
 
         var open by remember(date) { mutableStateOf<String?>(null) }
@@ -107,8 +113,8 @@ private fun SalesBody(v: Int, repo: Db, days: List<DaySummary>, date: LocalDate,
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            Panel(Modifier.weight(1f)) {
+        Split {
+            Panel(Modifier.part(1f)) {
                 H2("Credits")
                 if (credits.isEmpty()) Muted("None")
                 credits.forEach { l ->
@@ -118,7 +124,7 @@ private fun SalesBody(v: Int, repo: Db, days: List<DaySummary>, date: LocalDate,
                     }
                 }
             }
-            Panel(Modifier.weight(1f)) {
+            Panel(Modifier.part(1f)) {
                 H2("Voided tickets (not counted)")
                 if (voids.isEmpty()) Muted("None")
                 voids.forEach { d ->

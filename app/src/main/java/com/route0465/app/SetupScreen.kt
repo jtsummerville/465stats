@@ -76,8 +76,8 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
     }
 
     ScreenColumn {
-        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        Split {
+            Column(Modifier.part(1f), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                 Panel {
                     H2("Rates")
                     Muted("Upload a CSV or Excel file with product code, market rate, commission % and credit %. Same column names as Taco-Boys. New rates take effect from the date below (or the file's own date column); past days keep the rates they were figured with. Blank credit % uses 10% for GV 2933–2938 and 16% for everything else.")
@@ -109,7 +109,7 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
                 }
             }
 
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            Column(Modifier.part(1f), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                 Panel {
                     H2("XSales folder")
                     Text(found?.let { "Using $it" } ?: "Not found yet" + if (!XSales.hasAccess(ctx)) " (allow file access on Home first)" else "", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
