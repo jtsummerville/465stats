@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,6 +28,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import java.time.LocalDate
 
 @Composable
@@ -40,71 +50,88 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
     val due = nextOrderDue()
     var message by remember { mutableStateOf<String?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
-    val total = items.sumOf { it.qty }
+    var q by remember { mutableStateOf("") }
+    // Quantities live here while you type; each change is saved straight away.
+    val qty = remember(v) { mutableStateMapOf<String, Int>().apply { items.forEach { put(it.code, it.qty) } } }
+    val total = qty.values.sum()
+    val current = { items.map { it.copy(qty = qty[it.code] ?: 0) } }
+    val setQty = { code: String, n: Int -> val c = n.coerceIn(0, 9999); qty[code] = c; repo.setOrderQty(code, c) }
+    val shown = remember(items, q) {
+        val s = q.trim().lowercase()
+        if (s.isEmpty()) items else items.filter { it.code.lowercase().contains(s) || it.name.lowercase().contains(s) }
+    }
 
-    ScreenColumn {
+    Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Split(16.dp) {
             Panel(Modifier.part(1f), bg = C.AmberSoft, line = C.AmberLine) {
                 Text("Order deadline", fontSize = 14.sp, color = C.Amber, fontWeight = FontWeight.SemiBold)
                 Text((if (due == LocalDate.now()) "Today" else due.format(Fmt.day)) + " by midnight", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Tile("Cases ordered", total.toString())
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                PrimaryButton("Email order", enabled = items.isNotEmpty()) {
-                    try {
-                        val f = OrderPdf.build(ctx, items, due)
-                        OrderPdf.email(ctx, f, Prefs.orderEmail(ctx), due, total)
-                        message = if (Prefs.orderEmail(ctx).isBlank()) "Tip: set the order email address in Setup so it fills in by itself." else null
-                    } catch (e: Exception) {
-                        message = "Couldn't make the email: ${e.message}"
+                Tile("Cases ordered", total.toString())
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PrimaryButton("Email order", enabled = items.isNotEmpty()) {
+                        try {
+                            val f = OrderPdf.build(ctx, current(), due)
+                            OrderPdf.email(ctx, f, Prefs.orderEmail(ctx), due, total)
+                            message = if (Prefs.orderEmail(ctx).isBlank()) "Tip: set the order email address in Setup so it fills in by itself." else null
+                        } catch (e: Exception) {
+                            message = "Couldn't make the email: ${e.message}"
+                        }
+                    }
+                    SecondaryButton("Save PDF", enabled = items.isNotEmpty()) {
+                        message = try {
+                            val f = OrderPdf.build(ctx, current(), due)
+                            OrderPdf.saveToDownloads(ctx, f)
+                            "Saved ${f.name} to Downloads."
+                        } catch (e: Exception) {
+                            "Couldn't save the PDF: ${e.message}"
+                        }
                     }
                 }
-                SecondaryButton("Save PDF", enabled = items.isNotEmpty()) {
-                    message = try {
-                        val f = OrderPdf.build(ctx, items, due)
-                        OrderPdf.saveToDownloads(ctx, f)
-                        "Saved ${f.name} to Downloads."
-                    } catch (e: Exception) {
-                        "Couldn't save the PDF: ${e.message}"
-                    }
-                }
-            }
             }
         }
         message?.let { Banner(it, C.GreenSoft, C.GreenDark) }
 
-        Panel {
-            if (items.isEmpty()) {
+        if (items.isEmpty()) {
+            Panel {
                 H2("No products on your order guide yet")
-                Muted("Pick your products and put them in your order on the Setup screen.")
+                Muted("Pick your products and put them in your order in Setup › Order guide.")
                 SecondaryButton("Go to Setup") { go(Screen.Setup) }
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Muted("Cases to order. On hand is from the last import${stockDate?.let { " (" + it.format(Fmt.day) + ")" } ?: ""}.", 14)
-                    Box(Modifier.weight(1f))
-                    Text(
-                        "Clear all", color = C.Red, fontWeight = FontWeight.Bold, fontSize = 15.sp,
-                        modifier = Modifier.clickable { confirmClear = true }.padding(10.dp),
-                    )
-                }
-                items.forEach { item ->
-                    HorizontalDivider(color = C.Divider)
-                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        Text(item.code, color = C.Muted, fontSize = 15.sp, modifier = Modifier.width(64.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(item.name.ifEmpty { item.code }, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                            Muted("On hand ${onHand[item.code]?.let { c -> Fmt.one(c) } ?: "0.0"} cs", 13)
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(q, { q = it }, Modifier.weight(1f), singleLine = true, label = { Text("Find a product") })
+                Text(
+                    "Clear all", color = C.Red, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                    modifier = Modifier.clickable { confirmClear = true }.padding(10.dp),
+                )
+            }
+            Muted("Type the cases or use − +. On hand is from the last import${stockDate?.let { " (" + it.format(Fmt.day) + ")" } ?: ""}.", 13)
+            Panel(Modifier.weight(1f).fillMaxWidth(), pad = 0.dp) {
+                LazyColumn(Modifier.fillMaxSize()) {
+                    itemsIndexed(shown, key = { _, x -> x.code }) { i, item ->
+                        if (i > 0) HorizontalDivider(color = C.Divider)
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Text(item.code, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, color = C.Ink, modifier = Modifier.width(70.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(item.name.ifEmpty { item.code }, fontSize = 15.sp, fontWeight = FontWeight.Normal, maxLines = 2)
+                                Muted("On hand ${onHand[item.code]?.let { c -> Fmt.one(c) } ?: "0.0"} cs", 13)
+                            }
+                            promos[item.code]?.let { p ->
+                                Text(
+                                    p, color = C.Amber, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                                    modifier = Modifier.clip(RoundedCornerShape(999.dp)).background(C.AmberSoft).padding(horizontal = 10.dp, vertical = 5.dp),
+                                )
+                            }
+                            val n = qty[item.code] ?: 0
+                            StepButton("−", dark = false) { setQty(item.code, n - 1) }
+                            QtyField(n) { setQty(item.code, it) }
+                            StepButton("+", dark = true) { setQty(item.code, n + 1) }
                         }
-                        promos[item.code]?.let { p ->
-                            Text(
-                                p, color = C.Amber, fontWeight = FontWeight.Bold, fontSize = 13.sp,
-                                modifier = Modifier.clip(RoundedCornerShape(999.dp)).background(C.AmberSoft).padding(horizontal = 10.dp, vertical = 5.dp),
-                            )
-                        }
-                        StepButton("−", dark = false) { repo.setOrderQty(item.code, item.qty - 1); bump() }
-                        Text(item.qty.toString(), fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center, modifier = Modifier.width(48.dp))
-                        StepButton("+", dark = true) { repo.setOrderQty(item.code, item.qty + 1); bump() }
                     }
                 }
             }
@@ -114,6 +141,27 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
         ConfirmDialog("Clear all quantities?", "Sets every product on the order guide back to 0 cases.", "Clear",
             onConfirm = { repo.clearOrderQty(); bump() }, onDismiss = { confirmClear = false })
     }
+}
+
+/** A small number box you can type cases into. Blank counts as 0. */
+@Composable
+private fun QtyField(value: Int, onChange: (Int) -> Unit) {
+    var text by remember { mutableStateOf(if (value == 0) "" else value.toString()) }
+    // Follow − / + presses and Clear all without fighting the cursor while typing.
+    LaunchedEffect(value) { if ((text.toIntOrNull() ?: 0) != value) text = if (value == 0) "" else value.toString() }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { raw ->
+            val digits = raw.filter(Char::isDigit).take(4)
+            text = digits
+            onChange(digits.toIntOrNull() ?: 0)
+        },
+        modifier = Modifier.width(84.dp),
+        singleLine = true,
+        placeholder = { Text("0", fontSize = 20.sp, color = C.Line, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
+        textStyle = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+    )
 }
 
 @Composable

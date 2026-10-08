@@ -50,7 +50,7 @@ object OrderPdf {
                 y = 56f
                 header()
             }
-            c.drawText(it.code, 48f, y, body)
+            c.drawText(it.code, 48f, y, bold)
             c.drawText(it.name.take(60), 120f, y, body)
             c.drawText(it.qty.toString(), 530f, y, bold)
             y += 18f
