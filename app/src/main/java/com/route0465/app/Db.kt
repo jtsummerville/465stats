@@ -297,16 +297,60 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
         val j = if (up) i - 1 else i + 1
         if (i < 0 || j < 0 || j >= items.size) return
         val a = items[i]; items[i] = items[j]; items[j] = a
+        renumberOrder(items.map { it.code })
+    }
+
+    /** Moves a product to position [pos] (1 = top). */
+    fun moveOrderItemTo(code: String, pos: Int) {
+        val codes = orderItems().map { it.code }.toMutableList()
+        if (!codes.remove(code)) return
+        codes.add((pos - 1).coerceIn(0, codes.size), code)
+        renumberOrder(codes)
+    }
+
+    private fun renumberOrder(codes: List<String>) {
         val w = writableDatabase
         w.beginTransaction()
         try {
-            items.forEachIndexed { idx, item ->
-                w.update("order_items", ContentValues().apply { put("position", idx + 1) }, "code=?", arrayOf(item.code))
+            codes.forEachIndexed { idx, c ->
+                w.update("order_items", ContentValues().apply { put("position", idx + 1) }, "code=?", arrayOf(c))
             }
             w.setTransactionSuccessful()
         } finally {
             w.endTransaction()
         }
+    }
+
+    fun addOrderItems(codes: List<String>) {
+        val w = writableDatabase
+        w.beginTransaction()
+        try {
+            codes.forEach { addOrderItem(it) }
+            w.setTransactionSuccessful()
+        } finally {
+            w.endTransaction()
+        }
+    }
+
+    /** Replaces the whole order guide with [codes] in that order (quantities start at 0). */
+    fun replaceOrderItems(codes: List<String>) {
+        val w = writableDatabase
+        w.beginTransaction()
+        try {
+            w.delete("order_items", null, null)
+            codes.forEachIndexed { i, c ->
+                w.insertWithOnConflict("order_items", null, ContentValues().apply {
+                    put("code", c); put("position", i + 1); put("qty", 0)
+                }, SQLiteDatabase.CONFLICT_IGNORE)
+            }
+            w.setTransactionSuccessful()
+        } finally {
+            w.endTransaction()
+        }
+    }
+
+    fun clearOrderItems() {
+        writableDatabase.delete("order_items", null, null)
     }
 
     fun setOrderQty(code: String, qty: Int) {
