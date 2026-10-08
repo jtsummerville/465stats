@@ -146,6 +146,11 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
         "SELECT * FROM eod_pdfs WHERE date=?", arrayOf(date.toString())
     ) { c -> EodPdf(c.s("date"), c.s("path"), c.s("name"), c.s("received_at")) }.firstOrNull()
 
+    /** Days that have any saved paperwork, newest first. */
+    fun paperworkDays(): List<LocalDate> = readableDatabase.list(
+        "SELECT date FROM store_photos UNION SELECT date FROM eod_pdfs ORDER BY date DESC"
+    ) { LocalDate.parse(it.getString(0)) }
+
     fun setEodPdf(date: LocalDate, path: String, name: String) {
         writableDatabase.insertWithOnConflict("eod_pdfs", null, ContentValues().apply {
             put("date", date.toString()); put("path", path); put("name", name); put("received_at", now())

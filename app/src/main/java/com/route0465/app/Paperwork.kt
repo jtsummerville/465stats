@@ -159,6 +159,14 @@ object Paperwork {
         ctx.startActivity(Intent.createChooser(send, "Send End of Day").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION))
     }
 
+    fun viewPhoto(ctx: Context, f: File) {
+        val i = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uriFor(ctx, f), "image/jpeg")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        ctx.startActivity(Intent.createChooser(i, "Open photo").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
     fun view(ctx: Context, f: File) {
         val i = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uriFor(ctx, f), "application/pdf")
