@@ -1,0 +1,203 @@
+package com.route0465.app
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+/** One part of the app and the rules behind it. Each entry is a term or a rule, then how it's worked out. */
+data class HowTopic(val id: String, val title: String, val summary: String, val entries: List<Pair<String, String>>)
+
+/** Lets another screen open Setup straight to a topic here (e.g. Order › "How Suggested is figured"). */
+object HowLink {
+    var pendingTopic: String? = null
+}
+
+val HOW_TOPICS: List<HowTopic> = listOf(
+    HowTopic(
+        "import", "Importing from XSales", "Where the numbers come from and the today-only rule",
+        listOf(
+            "Which file" to "The app reads BCKAftMain.sqlite, the backup XSales writes after End of Day. If that one isn't today's, Home offers BCKBefMain.sqlite (the before-End-of-Day backup) instead. The matching Basics backup is copied alongside it.",
+            "Which folder" to "Unless you set a folder in Setup › XSales folder, the app looks through the tablet's storage (up to 5 folders deep) for folders holding BCKAftMain.sqlite and prefers one whose name has \"prd\" or \"prod\" in it, so \"Ole prd\" wins over a test copy like \"Ole\".",
+            "Read-only" to "The app copies the backup into its own storage and opens the copy read-only. It never writes to, moves or deletes anything in the XSales folder.",
+            "Today only — check 1, the whole file" to "The backup's business date (general.gnlDate) must be today. If it isn't, nothing is imported and the log says what date the file had.",
+            "Today only — check 2, every ticket" to "Each ticket's own date (invoice date, or start time if that's blank) must also be today. Any ticket from another day is dropped and counted as dropped, so nothing old can sneak in.",
+            "Truck stock" to "Truck inventory has no date per row, so it's only taken because the whole file already passed check 1.",
+            "One import per day" to "Once today is imported it isn't imported again. Voided tickets are kept for the record but never counted in sales or pay.",
+            "Automatic import" to "When the switch on Home is on, the app checks about every 15 minutes and whenever you open it. It only imports when BCKAftMain.sqlite has changed since last time, and the same two date checks apply. You get a notification when it imports.",
+        ),
+    ),
+    HowTopic(
+        "pay", "Pay", "Commission math, credits and pay periods",
+        listOf(
+            "Rates used" to "For each product the app uses the market rate and the commission % / credit % in effect on that day: the newest rate whose effective date is on or before the day.",
+            "A sale line" to "cases or units × market rate × commission %.",
+            "A credit (return) line" to "−(qty × market rate × commission %) − qty × market rate × (1 − credit %). You lose the commission you earned, plus the part of the product's value Ole doesn't credit back.",
+            "Default credit %" to "If a rate sheet has no credit %: products 2933–2938 use 10%, everything else 16%.",
+            "Damaged goods" to "Damage-return quantities on a sales ticket are counted as credit lines.",
+            "Missing rates" to "A product with no market rate or commission % on file counts $0 and is listed as missing on that day so you can fix the rate sheet.",
+            "Voids" to "Voided tickets pay nothing.",
+            "Pay periods" to "14 days: two Saturday–Friday weeks, counted from Sat 07/11/2026. The pay is figured when the day is imported, using the rates on file then.",
+        ),
+    ),
+    HowTopic(
+        "rates", "Rates upload", "How a rate sheet is read",
+        listOf(
+            "Two separate histories" to "Market rates and commission/credit % are stored separately, each with an effective date, like Taco-Boys. Uploading a new sheet adds new dated rows; older ones stay for older days.",
+            "Effective date" to "You're asked for the date the sheet takes effect. Days before it keep using the older rates.",
+            "Columns" to "The app finds the product code, market rate, commission % and credit % columns by their headings. A row with credit % but no commission % is skipped and noted.",
+        ),
+    ),
+    HowTopic(
+        "sales", "Sales", "Ranges, credit rate and promo weeks",
+        listOf(
+            "Ranges" to "Day, Week (Sat–Fri), 2 weeks, 4 weeks, Month and Year to date. The arrows step one range back or forward; Pick a date jumps to the range holding that day.",
+            "2 and 4 weeks" to "Counted back from the end of the current Sat–Fri week, in whole weeks.",
+            "Sales and credits" to "Sales are the dollars on sales tickets; credits are the dollars on return tickets and damage returns. Net = sales − credits. Voided tickets are left out and listed separately.",
+            "Credit rate" to "Credit dollars ÷ sales dollars for the whole window, one division, never an average of daily rates.",
+            "Credit colors" to "Green up to 1.5% (on target), amber up to 2.5% (check it), red above 2.5% (fix it). The line on the meter is the 1.5% target.",
+            "Promotions in this window" to "For each Sat–Fri week, the promos that overlapped it for banners you serve, and how much of the week they ran (all week, Mon–Wed, Sat only…).",
+        ),
+    ),
+    HowTopic(
+        "inventory", "Inventory", "Cases on hand and Inventory Check",
+        listOf(
+            "Cases on hand" to "From truck stock in the last import: units on hand ÷ case pack. The case pack is the largest unit multiplier XSales has for that product.",
+            "Total cases" to "The sum of cases on hand across every product.",
+            "Inventory Check" to "Compares cases on hand at your last two imports, product by product. Change = latest − previous.",
+        ),
+    ),
+    HowTopic(
+        "order", "Order guide and Suggested", "Deadline, delivery, suggestion, flags and ran short",
+        listOf(
+            "Order deadline" to "Wednesday by midnight (today, if today is Wednesday).",
+            "Which delivery" to "Ole places the order Thursday; it's delivered the Tuesday after. That delivery runs until the next Tuesday's delivery, and that week is what promo tags and Suggested aim at.",
+            "Weekly rate" to "Units sold per product over the last 4 full Sat–Fri weeks that have imported sales, ÷ case pack, ÷ the number of those weeks.",
+            "Suggested" to "weekly rate × (days from the last inventory import to the delivery + 7) ÷ 7, plus the cases you ran short by, minus cases on hand at the last import. Rounded up, never below 0.",
+            "Why + 7 days" to "The order has to cover you until the delivery and then through the week until the next delivery.",
+            "— instead of a number" to "No full week of sales imported yet, so there's nothing to average.",
+            "Promotions" to "Not added into Suggested. The tag tells you to stock up or bump, and you decide how much.",
+            "Red !" to "Your order is more than 5 cases away from Suggested, same as Taco-Boys. Only shown when you've ordered something.",
+            "Ran short / by" to "Tick it when you ran out before the last delivery and enter by how many cases. Those cases are added to Suggested. Clear all resets them for the next order.",
+            "Email order" to "Builds the order PDF, opens your mail app addressed to the order email, and saves a copy of the order and the suggestions in the app's order history.",
+        ),
+    ),
+    HowTopic(
+        "promos", "Promotions", "Banners and the stock up / light bump tags",
+        listOf(
+            "What a promo is" to "A banner (or All banners), a type you type in, one or more products, and a start and end date. Promos only count for banners your route serves, unless they're set to All banners.",
+            "Stock up (filled tag)" to "The sale is still running when the delivery lands: it starts before the next delivery and ends on or after it. Same rule as Taco-Boys.",
+            "Light bump (outlined tag)" to "The sale starts and ends inside the one delivery week, so it's short. Bump a little.",
+            "No tag" to "A sale that's ending partway through the delivery week (a dying sale), or one that hasn't started by then, isn't tagged.",
+            "Several promos" to "If more than one promo covers a product, the tag says PROMO ×2 (or more) and stock up wins over light bump. Tap the tag to see each one.",
+            "Ended promos" to "Folded away under Ended on the Promotions screen. They still show in Sales' promo weeks.",
+        ),
+    ),
+    HowTopic(
+        "shortages", "Shortages", "Warehouse short and missing freight",
+        listOf(
+            "What's kept" to "Each entry is today's date, the product, the quantity and whether it was warehouse short or missing freight. They're just a record; they don't change pay or Suggested.",
+        ),
+    ),
+    HowTopic(
+        "paperwork", "End of Day paperwork", "Photos, the XSales PDF and the email",
+        listOf(
+            "Store photos" to "Taken in the app per store and saved in the app's own storage, not your gallery.",
+            "Store paperwork PDF" to "One page per photo, stores in the order you first photographed them, each page labeled with the store, date and photo number. Photos are turned upright and shrunk to keep the PDF small.",
+            "XSales End of Day PDF" to "Share it from XSales into 465stats. The first real PDF in the share is saved as today's; sharing again replaces it.",
+            "Email" to "Opens your mail app addressed to the boss emails from Setup, with a subject, a short summary and both PDFs attached. You still tap Send in the mail app.",
+            "How long they're kept" to "60 days, then the photos and PDFs for older days are deleted from the app.",
+        ),
+    ),
+    HowTopic(
+        "upc", "UPC lookup", "Where the barcodes come from",
+        listOf(
+            "Product list" to "A built-in list of Ole products with code, description, case pack and UPC.",
+            "Barcode" to "Drawn as a UPC-A barcode from the 12-digit UPC. Scan view turns the screen brightness all the way up so scanners can read it.",
+        ),
+    ),
+    HowTopic(
+        "backups", "Backups and password", "What's backed up and how it's locked",
+        listOf(
+            "What's backed up" to "The app's own database: days, sales, pay, rates, order guide, promos, shortages. Not the XSales files and not the photos.",
+            "When" to "About every 6 hours, once there's at least one imported day. One zip per day, rewritten through the day so it holds the latest. The newest 30 are kept.",
+            "Where" to "Documents/465stats backups on the tablet.",
+            "Lock" to "Each zip is locked with AES-256 using your backup password. It opens in 7-Zip or WinRAR on a computer. No password, no backups.",
+            "Changing the password" to "Needs the current password plus the new one typed twice.",
+        ),
+    ),
+)
+
+@Composable
+fun HowItWorksSection(back: () -> Unit) {
+    var open by rememberSaveable { mutableStateOf(HowLink.pendingTopic ?: "") }
+    remember { HowLink.pendingTopic = null; 0 }
+    var q by remember { mutableStateOf("") }
+    val s = q.trim().lowercase()
+    ScreenColumn {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text(
+                "‹  Setup", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 17.sp,
+                modifier = Modifier.clickable { back() }.padding(vertical = 10.dp, horizontal = 4.dp),
+            )
+            Text("How it works", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+        }
+        Muted("The rules behind every number in the app. Tap a part to open it, or search for a word.", 14)
+        OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Search, e.g. credit, suggested, void") })
+        val topics = HOW_TOPICS.mapNotNull { t ->
+            if (s.isEmpty()) t to t.entries
+            else {
+                val hit = t.entries.filter { (a, b) -> a.lowercase().contains(s) || b.lowercase().contains(s) }
+                when {
+                    t.title.lowercase().contains(s) -> t to t.entries
+                    hit.isNotEmpty() -> t to hit
+                    else -> null
+                }
+            }
+        }
+        if (topics.isEmpty()) Muted("Nothing matches \"$q\".")
+        Panel(pad = 0.dp) {
+            topics.forEachIndexed { i, (t, entries) ->
+                if (i > 0) HorizontalDivider(color = C.Divider)
+                val expanded = s.isNotEmpty() || open == t.id
+                Row(
+                    Modifier.fillMaxWidth().clickable { open = if (open == t.id) "" else t.id }.padding(horizontal = 22.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(t.title, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text(t.summary, fontSize = 14.sp, color = C.Muted)
+                    }
+                    Text(if (expanded) "▴" else "▾", fontSize = 18.sp, color = C.Green)
+                }
+                if (expanded) Column(
+                    Modifier.fillMaxWidth().padding(start = 22.dp, end = 22.dp, bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    entries.forEach { (term, rule) ->
+                        Column {
+                            Text(term, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = C.GreenDark)
+                            Text(rule, fontSize = 15.sp, lineHeight = 21.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -55,11 +55,13 @@ private enum class SetupSection(val title: String) {
     Backups("Backups and password"),
     Stores("Stores and products"),
     Imports("Imports and activity log"),
+    HowItWorks("How it works"),
 }
 
 @Composable
 fun SetupScreen(v: Int, bump: () -> Unit) {
     var sectionName by rememberSaveable { mutableStateOf("") }
+    if (HowLink.pendingTopic != null && sectionName != SetupSection.HowItWorks.name) sectionName = SetupSection.HowItWorks.name
     val back = { sectionName = "" }
     when (if (sectionName.isEmpty()) null else SetupSection.valueOf(sectionName)) {
         null -> SetupMenu(v) { sectionName = it.name }
@@ -70,6 +72,7 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
         SetupSection.Backups -> BackupsSection(v, bump, back)
         SetupSection.Stores -> StoresSection(v, back)
         SetupSection.Imports -> ImportsSection(v, bump, back)
+        SetupSection.HowItWorks -> HowItWorksSection(back)
     }
 }
 
@@ -91,6 +94,7 @@ private fun SetupMenu(v: Int, open: (SetupSection) -> Unit) {
             SetupSection.Backups to (if (Prefs.backupPassword(ctx).isEmpty()) "Off: no password set" else "Password set · " + (backups.firstOrNull()?.name ?: "no backups yet")),
             SetupSection.Stores to "${repo.stores().size} stores · ${repo.productCount()} products",
             SetupSection.Imports to (last?.let { "Last import ${it.date.format(Fmt.day)}" } ?: "No imports yet"),
+            SetupSection.HowItWorks to "The logic behind pay, sales, Suggested, promos and the rest",
         )
     }
     ScreenColumn {

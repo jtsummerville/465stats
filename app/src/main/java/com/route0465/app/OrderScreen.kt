@@ -65,7 +65,6 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
     val sugg = remember(v) { Suggest.compute(repo, items, onHandU, stockDate, cycle.first) }
     // Ran short last delivery, and by how many cases (Taco-Boys "Ran short / Short by").
     val ran = remember(v) { mutableStateMapOf<String, Pair<Boolean, Int>>().apply { items.forEach { put(it.code, it.ranShort to it.shortBy) } } }
-    var showHow by remember { mutableStateOf(false) }
     val due = nextOrderDue()
     var message by remember { mutableStateOf<String?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
@@ -157,14 +156,9 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                 "${qty.values.count { it > 0 }} items · $total cases · ${items.count { flagged(it.code) }} flags · ${ran.values.count { it.first }} ran short",
                 fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
             )
-            Row(Modifier.fillMaxWidth().clickable { showHow = !showHow }, verticalAlignment = Alignment.CenterVertically) {
-                Text("How Suggested is figured", fontSize = 14.sp, color = C.Green, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                Text(if (showHow) "▴" else "▾", color = C.Green)
-            }
-            if (showHow) Muted(
-                "Average cases sold per week over your last 4 full Sat–Fri weeks, enough to last from the last inventory to this delivery (${cycle.first.format(Fmt.day)}) and through the next 7 days, plus what you ran short by, minus what's on hand, rounded up. " +
-                    "Promotions aren't added in; the tag tells you to stock up or bump. A ! means your order is more than ${Suggest.FLAG_CASES} cases off the suggestion. " +
-                    "It gets better as more days are imported; with no sales yet it shows —.", 13,
+            Text(
+                "How Suggested is figured ›", fontSize = 14.sp, color = C.Green, fontWeight = FontWeight.Bold,
+                modifier = Modifier.clickable { HowLink.pendingTopic = "order"; go(Screen.Setup) }.padding(vertical = 4.dp),
             )
             Muted(
                 (if (editing) "Type the cases or use − +. Tap Done to lock it." else "Locked. Tap Edit order to change quantities.") +
