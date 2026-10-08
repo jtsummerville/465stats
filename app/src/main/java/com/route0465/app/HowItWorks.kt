@@ -39,6 +39,7 @@ val HOW_TOPICS: List<HowTopic> = listOf(
             "Today only — check 1, the whole file" to "The backup's business date (general.gnlDate) must be today. If it isn't, nothing is imported and the log says what date the file had.",
             "Today only — check 2, every ticket" to "Each ticket's own date (invoice date, or start time if that's blank) must also be today. Any ticket from another day is dropped and counted as dropped, so nothing old can sneak in.",
             "Truck stock" to "Truck inventory has no date per row, so it's only taken because the whole file already passed check 1.",
+            "Stores and products" to "Each import adds any new stores and products from XSales and updates their names and case packs. A store or product you added, renamed or changed in Setup › Stores and products keeps your version, and one you removed stays removed.",
             "One import per day" to "Once today is imported it isn't imported again. Voided tickets are kept for the record but never counted in sales or pay.",
             "Automatic import" to "When the switch on Home is on, the app checks about every 15 minutes and whenever you open it. It only imports when BCKAftMain.sqlite has changed since last time, and the same two date checks apply. You get a notification when it imports.",
         ),

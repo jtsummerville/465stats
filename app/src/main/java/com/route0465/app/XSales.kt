@@ -298,15 +298,19 @@ object XSales {
                         put("onhand", s.onHand); put("damage", s.damage); put("reload", s.reload); put("case_pack", s.casePack)
                     })
                 }
+                // New stores and products are added; ones you changed or removed by hand are left alone.
                 prodNames.forEach { (code, name) ->
+                    val cp = casePack[code] ?: 1.0
                     w.insertWithOnConflict("products", null, ContentValues().apply {
-                        put("code", code); put("name", name); put("case_pack", casePack[code] ?: 1.0)
-                    }, SQLiteDatabase.CONFLICT_REPLACE)
+                        put("code", code); put("name", name); put("case_pack", cp)
+                    }, SQLiteDatabase.CONFLICT_IGNORE)
+                    w.execSQL("UPDATE products SET name=?, case_pack=? WHERE code=? AND COALESCE(manual,0)=0", arrayOf<Any>(name, cp, code))
                 }
                 storeNames.forEach { (code, name) ->
                     w.insertWithOnConflict("stores", null, ContentValues().apply {
                         put("cus_code", code); put("name", name)
-                    }, SQLiteDatabase.CONFLICT_REPLACE)
+                    }, SQLiteDatabase.CONFLICT_IGNORE)
+                    w.execSQL("UPDATE stores SET name=? WHERE cus_code=? AND COALESCE(manual,0)=0", arrayOf<Any>(name, code))
                 }
                 repo.log(
                     "Imported ${today.format(Fmt.mdy)} from $source: read $read tickets, kept ${kept.size}, " +

@@ -70,7 +70,7 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
         SetupSection.Emails -> EmailsSection(back)
         SetupSection.Folder -> FolderSection(v, bump, back)
         SetupSection.Backups -> BackupsSection(v, bump, back)
-        SetupSection.Stores -> StoresSection(v, back)
+        SetupSection.Stores -> StoresSection(v, bump, back)
         SetupSection.Imports -> ImportsSection(v, bump, back)
         SetupSection.HowItWorks -> HowItWorksSection(back)
     }
@@ -423,21 +423,196 @@ private fun PasswordDialog(ctx: Context, hasPw: Boolean, onDone: (String?) -> Un
 // ---------------------------------------------------------------- stores
 
 @Composable
-private fun StoresSection(v: Int, back: () -> Unit) {
+private fun StoresSection(v: Int, bump: () -> Unit, back: () -> Unit) {
     val ctx = LocalContext.current
     val repo = remember { Db.get(ctx) }
     val stores = remember(v) { repo.stores() }
-    val products = remember(v) { repo.productCount() }
+    val removedStores = remember(v) { repo.removedStores() }
+    var editStores by remember { mutableStateOf(false) }
+    var storeDialog by remember { mutableStateOf<Pair<String, String>?>(null) } // code to name; code "" = new
+    var removeStore by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var showRemovedStores by remember { mutableStateOf(false) }
+
+    var q by remember { mutableStateOf("") }
+    val products = remember(v, q) { repo.products(q, 60) }
+    val productCount = remember(v) { repo.productCount() }
+    val removedProducts = remember(v) { repo.removedProducts() }
+    var editProducts by remember { mutableStateOf(false) }
+    var productDialog by remember { mutableStateOf<Product?>(null) } // code "" = new
+    var removeProduct by remember { mutableStateOf<Product?>(null) }
+    var showRemovedProducts by remember { mutableStateOf(false) }
+
     ScreenColumn {
         SectionTop("Stores and products", back)
+        Muted("New stores and products come in from XSales with each import. Anything you add, rename or remove here stays the way you set it.", 14)
+
+        // ---- Stores ----
         Panel {
-            Muted("These come from XSales at each import; nothing to edit here.", 14)
-            ReadRow("Products", "$products")
-            HorizontalDivider(color = C.Divider)
-            Text("Route 0465 stores (${stores.size})", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            if (stores.isEmpty()) Muted("Stores load from XSales with your first import.")
-            stores.forEach { (_, name) -> Text(name, fontSize = 15.sp, modifier = Modifier.padding(vertical = 4.dp)) }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Stores (${stores.size})", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
+                if (editStores) SecondaryButton("Add store") { storeDialog = "" to "" }
+                if (!editStores) SecondaryButton("Edit") { editStores = true } else PrimaryButton("Done") { editStores = false }
+            }
+            Muted(if (editStores) "Tap a store to rename it." else "Locked. Tap Edit to add, rename or remove stores.", 13)
+            if (stores.isEmpty()) Muted("Stores load from XSales with your first import, or tap Edit, then Add store.")
+            stores.forEachIndexed { i, (code, name) ->
+                if (i > 0) HorizontalDivider(color = C.Divider)
+                Row(
+                    Modifier.fillMaxWidth().clickable(enabled = editStores) { storeDialog = code to name }.heightIn(min = 48.dp).padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(name, fontSize = 16.sp)
+                        Muted("Store # $code · ${bannerOf(name)}", 12)
+                    }
+                    if (editStores) Text(
+                        "Remove", color = C.Red, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                        modifier = Modifier.clickable { removeStore = code to name }.padding(10.dp),
+                    )
+                }
+            }
+            if (removedStores.isNotEmpty()) {
+                HorizontalDivider(color = C.Divider)
+                Text(
+                    "Removed stores (${removedStores.size}) " + if (showRemovedStores) "▴" else "▾", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                    modifier = Modifier.clickable { showRemovedStores = !showRemovedStores }.padding(vertical = 8.dp),
+                )
+                if (showRemovedStores) removedStores.forEach { (code, name) ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("$name · # $code", fontSize = 15.sp, color = C.Muted, modifier = Modifier.weight(1f))
+                        if (editStores) Text(
+                            "Put back", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                            modifier = Modifier.clickable { repo.setStoreHidden(code, false); bump() }.padding(10.dp),
+                        )
+                    }
+                }
+            }
         }
+
+        // ---- Products ----
+        Panel {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Products ($productCount)", fontWeight = FontWeight.Bold, fontSize = 18.sp, modifier = Modifier.weight(1f))
+                if (editProducts) SecondaryButton("Add product") { productDialog = Product("", "", 1.0) }
+                if (!editProducts) SecondaryButton("Edit") { editProducts = true } else PrimaryButton("Done") { editProducts = false }
+            }
+            Muted(if (editProducts) "Tap a product to change its name or case pack." else "Locked. Tap Edit to add, change or remove products.", 13)
+            OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Find a product by code or name") })
+            if (products.isEmpty()) Muted(if (q.isBlank()) "Products load from XSales with your first import." else "No products match that search.")
+            products.forEachIndexed { i, p ->
+                if (i > 0) HorizontalDivider(color = C.Divider)
+                Row(
+                    Modifier.fillMaxWidth().clickable(enabled = editProducts) { productDialog = p }.heightIn(min = 48.dp).padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(p.code, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, maxLines = 1, softWrap = false, modifier = Modifier.width(76.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(p.name, fontSize = 15.sp)
+                        Muted("Case pack ${Fmt.qty(p.casePack)}", 12)
+                    }
+                    if (editProducts) Text(
+                        "Remove", color = C.Red, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                        modifier = Modifier.clickable { removeProduct = p }.padding(10.dp),
+                    )
+                }
+            }
+            if (products.size >= 60) Muted("Showing the first 60. Search to find others.", 13)
+            if (removedProducts.isNotEmpty()) {
+                HorizontalDivider(color = C.Divider)
+                Text(
+                    "Removed products (${removedProducts.size}) " + if (showRemovedProducts) "▴" else "▾", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                    modifier = Modifier.clickable { showRemovedProducts = !showRemovedProducts }.padding(vertical = 8.dp),
+                )
+                if (showRemovedProducts) removedProducts.forEach { p ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("${p.code} · ${p.name}", fontSize = 15.sp, color = C.Muted, modifier = Modifier.weight(1f))
+                        if (editProducts) Text(
+                            "Put back", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                            modifier = Modifier.clickable { repo.setProductHidden(p.code, false); bump() }.padding(10.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    storeDialog?.let { (code0, name0) ->
+        val isNew = code0.isEmpty()
+        var code by remember { mutableStateOf(code0) }
+        var name by remember { mutableStateOf(name0) }
+        var err by remember { mutableStateOf<String?>(null) }
+        AlertDialog(
+            onDismissRequest = { storeDialog = null },
+            title = { Text(if (isNew) "Add a store" else "Rename store") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Store name, e.g. KROGER #123") })
+                    if (isNew) OutlinedTextField(code, { code = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Store number in XSales (optional)") })
+                    else Muted("Store # $code0", 13)
+                    Muted("The banner (Kroger, Walmart…) is read from the start of the name.", 12)
+                    err?.let { Text(it, color = C.Red, fontSize = 14.sp) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val n = name.trim()
+                    val c = code.trim().ifEmpty { "M" + System.currentTimeMillis() % 1_000_000 }
+                    when {
+                        n.isEmpty() -> err = "Type the store name."
+                        isNew && repo.storeExists(c) -> err = "Store # $c is already on the list."
+                        else -> { repo.saveStore(if (isNew) c else code0, n); storeDialog = null; bump() }
+                    }
+                }) { Text("Save", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { storeDialog = null }) { Text("Cancel") } },
+        )
+    }
+
+    productDialog?.let { p0 ->
+        val isNew = p0.code.isEmpty()
+        var code by remember { mutableStateOf(p0.code) }
+        var name by remember { mutableStateOf(p0.name) }
+        var pack by remember { mutableStateOf(if (isNew) "" else Fmt.qty(p0.casePack)) }
+        var err by remember { mutableStateOf<String?>(null) }
+        AlertDialog(
+            onDismissRequest = { productDialog = null },
+            title = { Text(if (isNew) "Add a product" else "Change ${p0.code}") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (isNew) OutlinedTextField(code, { code = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Item code") })
+                    OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Description") })
+                    OutlinedTextField(
+                        pack, { pack = it.filter { ch -> ch.isDigit() || ch == '.' } }, Modifier.fillMaxWidth(), singleLine = true,
+                        label = { Text("Case pack (units per case)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    )
+                    Muted("Case pack is used to turn units into cases for Suggested and the order guide.", 12)
+                    err?.let { Text(it, color = C.Red, fontSize = 14.sp) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val c = code.trim()
+                    val cp = pack.toDoubleOrNull()
+                    when {
+                        c.isEmpty() -> err = "Type the item code."
+                        name.isBlank() -> err = "Type the description."
+                        cp == null || cp <= 0 -> err = "Case pack has to be a number above 0."
+                        isNew && repo.productExists(c) -> err = "$c is already a product. Search for it to change it."
+                        else -> { repo.saveProduct(c, name.trim(), cp); productDialog = null; bump() }
+                    }
+                }) { Text("Save", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { productDialog = null }) { Text("Cancel") } },
+        )
+    }
+
+    removeStore?.let { (code, name) ->
+        ConfirmDialog("Remove $name?", "It comes off your store list and won't come back with imports. You can put it back from Removed stores.", "Remove",
+            onConfirm = { repo.setStoreHidden(code, true); bump() }, onDismiss = { removeStore = null })
+    }
+    removeProduct?.let { p ->
+        ConfirmDialog("Remove ${p.code}?", "${p.name} comes off your product list and won't come back with imports. You can put it back from Removed products.", "Remove",
+            onConfirm = { repo.setProductHidden(p.code, true); bump() }, onDismiss = { removeProduct = null })
     }
 }
 

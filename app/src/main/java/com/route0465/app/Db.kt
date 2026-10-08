@@ -130,6 +130,12 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
             val has = db.list("PRAGMA table_info(order_items)") { it.getString(1) }.contains(name)
             if (!has) db.execSQL("ALTER TABLE order_items ADD COLUMN $col")
         }
+        // Stores and products you change yourself: manual = keep your version over XSales', hidden = removed by you.
+        for (t in listOf("stores", "products")) {
+            val cols = db.list("PRAGMA table_info($t)") { it.getString(1) }
+            if ("manual" !in cols) db.execSQL("ALTER TABLE $t ADD COLUMN manual INTEGER DEFAULT 0")
+            if ("hidden" !in cols) db.execSQL("ALTER TABLE $t ADD COLUMN hidden INTEGER DEFAULT 0")
+        }
     }
 
     // ---------- end of day paperwork ----------
@@ -241,20 +247,58 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
 
     // ---------- products / stores ----------
 
-    fun productCount(): Int = readableDatabase.list("SELECT COUNT(*) FROM products") { it.getInt(0) }.first()
+    fun productCount(): Int = readableDatabase.list("SELECT COUNT(*) FROM products WHERE COALESCE(hidden,0)=0") { it.getInt(0) }.first()
 
     fun products(search: String, limit: Int = 80): List<Product> {
         val q = "%${search.trim()}%"
         return readableDatabase.list(
-            "SELECT * FROM products WHERE code LIKE ? OR name LIKE ? ORDER BY code LIMIT $limit", arrayOf(q, q)
+            "SELECT * FROM products WHERE COALESCE(hidden,0)=0 AND (code LIKE ? OR name LIKE ?) ORDER BY code LIMIT $limit", arrayOf(q, q)
         ) { c -> Product(c.s("code"), c.s("name"), c.d("case_pack")) }
     }
+
+    fun removedProducts(): List<Product> =
+        readableDatabase.list("SELECT * FROM products WHERE COALESCE(hidden,0)=1 ORDER BY code") { c -> Product(c.s("code"), c.s("name"), c.d("case_pack")) }
+
+    fun productExists(code: String): Boolean =
+        readableDatabase.list("SELECT 1 FROM products WHERE code=? COLLATE NOCASE", arrayOf(code)) { 1 }.isNotEmpty()
+
+    /** Adds or changes a product by hand. Later imports keep your name and case pack. */
+    fun saveProduct(code: String, name: String, casePack: Double) {
+        writableDatabase.insertWithOnConflict("products", null, ContentValues().apply {
+            put("code", code); put("name", name); put("case_pack", casePack); put("manual", 1); put("hidden", 0)
+        }, SQLiteDatabase.CONFLICT_REPLACE)
+        log("Product $code saved by hand: $name, case pack ${Fmt.qty(casePack)}")
+    }
+
+    fun setProductHidden(code: String, hidden: Boolean) {
+        writableDatabase.execSQL("UPDATE products SET hidden=? WHERE code=?", arrayOf<Any>(if (hidden) 1 else 0, code))
+        log("Product $code " + if (hidden) "removed" else "put back")
+    }
+
+    fun storeExists(code: String): Boolean =
+        readableDatabase.list("SELECT 1 FROM stores WHERE cus_code=? COLLATE NOCASE", arrayOf(code)) { 1 }.isNotEmpty()
+
+    /** Adds or renames a store by hand. Later imports keep your name. */
+    fun saveStore(code: String, name: String) {
+        writableDatabase.insertWithOnConflict("stores", null, ContentValues().apply {
+            put("cus_code", code); put("name", name); put("manual", 1); put("hidden", 0)
+        }, SQLiteDatabase.CONFLICT_REPLACE)
+        log("Store $code saved by hand: $name")
+    }
+
+    fun setStoreHidden(code: String, hidden: Boolean) {
+        writableDatabase.execSQL("UPDATE stores SET hidden=? WHERE cus_code=?", arrayOf<Any>(if (hidden) 1 else 0, code))
+        log("Store $code " + if (hidden) "removed" else "put back")
+    }
+
+    fun removedStores(): List<Pair<String, String>> =
+        readableDatabase.list("SELECT * FROM stores WHERE COALESCE(hidden,0)=1 ORDER BY name") { c -> c.s("cus_code") to c.s("name") }
 
     fun productName(code: String): String =
         readableDatabase.list("SELECT name FROM products WHERE code=?", arrayOf(code)) { it.getString(0) ?: "" }.firstOrNull() ?: ""
 
     fun stores(): List<Pair<String, String>> =
-        readableDatabase.list("SELECT * FROM stores ORDER BY name") { c -> c.s("cus_code") to c.s("name") }
+        readableDatabase.list("SELECT * FROM stores WHERE COALESCE(hidden,0)=0 ORDER BY name") { c -> c.s("cus_code") to c.s("name") }
 
     // ---------- rates ----------
 
