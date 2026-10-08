@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
+import androidx.compose.foundation.border
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,7 +49,9 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
     val items = remember(v) { repo.orderItems() }
     val stockDate = remember(v) { repo.stockDates().firstOrNull() }
     val onHand = remember(v, stockDate) { stockDate?.let { d -> repo.stock(d).associate { it.code to it.cases } } ?: emptyMap() }
-    val promos = remember(v) { activePromos(repo.promos(), LocalDate.now()) }
+    val cycle = orderCycle()
+    val promos = remember(v) { promoTags(repo.promosV2(), bannersFor(repo.stores().map { it.second }).toSet() - ALL_BANNERS, cycle) }
+    var promoInfo by remember { mutableStateOf<Pair<String, PromoTag>?>(null) }
     val due = nextOrderDue()
     var message by remember { mutableStateOf<String?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
@@ -106,7 +111,8 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
             }
             Muted(
                 (if (editing) "Type the cases or use − +. Tap Done to lock it." else "Locked. Tap Edit order to change quantities.") +
-                    " On hand is from the last import${stockDate?.let { " (" + it.format(Fmt.day) + ")" } ?: ""}.", 13,
+                    " On hand is from the last import${stockDate?.let { " (" + it.format(Fmt.day) + ")" } ?: ""}." +
+                    " Promo tags are for delivery ${cycle.first.format(Fmt.day)} – ${cycle.second.minusDays(1).format(Fmt.day)}: filled = stock up, outlined = light bump. Tap a tag for details.", 13,
             )
             Panel(Modifier.weight(1f).fillMaxWidth(), pad = 0.dp) {
                 LazyColumn(Modifier.fillMaxSize()) {
@@ -121,10 +127,15 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                                 Text(item.name.ifEmpty { item.code }, fontSize = 15.sp, fontWeight = FontWeight.Normal, maxLines = 2)
                                 Muted("On hand ${onHand[item.code]?.let { c -> Fmt.one(c) } ?: "0.0"} cs", 13)
                             }
-                            promos[item.code]?.let { p ->
+                            promos[item.code.uppercase()]?.let { tag ->
+                                val short = tag.state == "short"
                                 Text(
-                                    p, color = C.Amber, fontWeight = FontWeight.Bold, fontSize = 13.sp,
-                                    modifier = Modifier.clip(RoundedCornerShape(999.dp)).background(C.AmberSoft).padding(horizontal = 10.dp, vertical = 5.dp),
+                                    tag.label, color = if (short) C.Blue else C.Amber, fontWeight = FontWeight.Bold, fontSize = 13.sp,
+                                    modifier = Modifier.clip(RoundedCornerShape(999.dp))
+                                        .background(if (short) Color.White else C.AmberSoft)
+                                        .border(1.5.dp, if (short) C.Blue else C.AmberSoft, RoundedCornerShape(999.dp))
+                                        .clickable { promoInfo = item.code to tag }
+                                        .padding(horizontal = 10.dp, vertical = 5.dp),
                                 )
                             }
                             val n = qty[item.code] ?: 0
@@ -143,6 +154,22 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                 }
             }
         }
+    }
+    promoInfo?.let { (code, tag) ->
+        AlertDialog(
+            onDismissRequest = { promoInfo = null },
+            title = { Text("$code on promotion") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("For delivery ${cycle.first.format(Fmt.day)} – ${cycle.second.minusDays(1).format(Fmt.day)}:", color = C.Muted)
+                    tag.lines.forEach { l ->
+                        Text("${l.banner} — ${l.type}", fontWeight = FontWeight.Bold)
+                        Text("${l.dates} · ${l.cue}", color = if (l.state == "short") C.Blue else C.Amber)
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { promoInfo = null }) { Text("OK") } },
+        )
     }
     if (confirmClear) {
         ConfirmDialog("Clear all quantities?", "Sets every product on the order guide back to 0 cases.", "Clear",
@@ -177,16 +204,4 @@ private fun StepButton(label: String, dark: Boolean, onClick: () -> Unit) {
         Modifier.size(52.dp).clip(RoundedCornerShape(10.dp)).background(if (dark) C.Ink else C.Ground).clickable { onClick() },
         contentAlignment = Alignment.Center,
     ) { Text(label, fontSize = 26.sp, color = if (dark) Color.White else C.Ink, fontWeight = FontWeight.Bold) }
-}
-
-/** Product code -> badge text for promos that haven't ended yet. */
-fun activePromos(promos: List<Promo>, today: LocalDate): Map<String, String> {
-    val out = HashMap<String, String>()
-    promos.forEach { p ->
-        val end = parseLooseDate(p.end, today)
-        if (end == null || !end.isBefore(today)) {
-            out.putIfAbsent(p.code, "Promo " + listOf(p.start, p.end).filter { it.isNotBlank() }.joinToString(" – ").ifEmpty { p.deal })
-        }
-    }
-    return out
 }

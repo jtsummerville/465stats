@@ -13,6 +13,9 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,63 +44,134 @@ private fun PickField(label: String, value: String, onClick: () -> Unit) {
 fun PromosScreen(v: Int, bump: () -> Unit) {
     val ctx = LocalContext.current
     val repo = remember { Db.get(ctx) }
-    val promos = remember(v) { repo.promos() }
-    val stores = remember(v) { repo.stores() }
-    var product by remember { mutableStateOf<Product?>(null) }
-    var store by remember { mutableStateOf("All banners") }
+    val today = LocalDate.now()
+    val promos = remember(v) { repo.promosV2() }
+    val names = remember(v) { repo.products("", 5000).associate { it.code.uppercase() to it.name } }
+    val banners = remember(v) { bannersFor(repo.stores().map { it.second }) }
+    val cycle = orderCycle(today)
+
+    var banner by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf("") }
     var start by remember { mutableStateOf("") }
     var end by remember { mutableStateOf("") }
-    var deal by remember { mutableStateOf("") }
+    var items by remember { mutableStateOf(listOf<String>()) }
+    var bannerMenu by remember { mutableStateOf(false) }
+    var typeMenu by remember { mutableStateOf(false) }
+    var newType by remember { mutableStateOf<String?>(null) }
     var picking by remember { mutableStateOf(false) }
-    var storeMenu by remember { mutableStateOf(false) }
-    var deleting by remember { mutableStateOf<Promo?>(null) }
+    var deleting by remember { mutableStateOf<PromoV2?>(null) }
+    var showEnded by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    val current = promos.filter { !it.end.isBefore(today) }
+    val ended = promos.filter { it.end.isBefore(today) }
+
+    @Composable
+    fun PromoCard(p: PromoV2) {
+        HorizontalDivider(color = C.Divider)
+        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("${p.banner} — ${p.type}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                val status = when {
+                    p.start.isAfter(today) -> "Starts ${p.start.format(Fmt.day)}"
+                    p.end.isBefore(today) -> "Ended"
+                    else -> "Running now"
+                }
+                Muted("${promoDates(p.start, p.end)} · $status", 14)
+                val tag = classifyForCycle(p.start, p.end, cycle.first, cycle.second)
+                if (tag != null) Text(
+                    "On this order: " + if (tag == "short") "light bump" else "stock up",
+                    fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (tag == "short") C.Blue else C.Amber,
+                )
+                p.items.forEach { code ->
+                    Row {
+                        Text(code, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.width(64.dp))
+                        Text(names[code.uppercase()] ?: "", fontSize = 14.sp)
+                    }
+                }
+            }
+            Text("Remove", color = C.Red, fontSize = 14.sp, modifier = Modifier.clickable { deleting = p }.padding(12.dp))
+        }
+    }
 
     ScreenColumn {
         Split {
             Panel(Modifier.part(1.4f)) {
                 H2("Promotions")
-                if (promos.isEmpty()) Muted("None yet. Add one on the right.")
-                promos.forEach { p ->
+                Muted("This order's delivery cycle: ${cycle.first.format(Fmt.day)} – ${cycle.second.minusDays(1).format(Fmt.day)}. A promo tags its products on the order guide when it lands on that cycle.", 13)
+                if (current.isEmpty()) Muted("No current or upcoming promotions.")
+                current.sortedBy { it.start }.forEach { PromoCard(it) }
+                if (ended.isNotEmpty()) {
                     HorizontalDivider(color = C.Divider)
-                    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("${p.code} ${p.name}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Muted("${bannerLabel(p.store)} · ${listOf(p.start, p.end).filter { it.isNotBlank() }.joinToString(" – ")}", 14)
-                        }
-                        Text(p.deal, color = C.Amber, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        Text("Remove", color = C.Red, fontSize = 14.sp, modifier = Modifier.clickable { deleting = p }.padding(12.dp))
+                    Row(Modifier.fillMaxWidth().clickable { showEnded = !showEnded }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Ended", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                        Muted("${ended.size}", 13)
+                        Text(if (showEnded) "  ▴" else "  ▾", fontSize = 18.sp, color = C.Muted)
                     }
+                    if (showEnded) ended.forEach { PromoCard(it) }
                 }
             }
             Panel(Modifier.part(1f)) {
                 H2("Add a promotion")
-                PickField("Product", product?.let { "${it.code} ${it.name}" } ?: "") { picking = true }
                 Box {
-                    PickField("Banner (applies to every store of that chain)", store) { storeMenu = true }
-                    DropdownMenu(expanded = storeMenu, onDismissRequest = { storeMenu = false }) {
-                        (listOf("All banners") + bannersFor(stores.map { it.second })).forEach { s ->
-                            DropdownMenuItem(text = { Text(s) }, onClick = { store = s; storeMenu = false })
-                        }
+                    PickField("Banner (every store of that chain)", banner) { bannerMenu = true }
+                    DropdownMenu(expanded = bannerMenu, onDismissRequest = { bannerMenu = false }) {
+                        (banners + ALL_BANNERS).forEach { b -> DropdownMenuItem(text = { Text(b) }, onClick = { banner = b; bannerMenu = false }) }
+                    }
+                }
+                Box {
+                    PickField("Sale type", type) { typeMenu = true }
+                    DropdownMenu(expanded = typeMenu, onDismissRequest = { typeMenu = false }) {
+                        SaleTypes.all(ctx).forEach { t -> DropdownMenuItem(text = { Text(t) }, onClick = { type = t; typeMenu = false }) }
+                        DropdownMenuItem(text = { Text("New type…", color = C.Green, fontWeight = FontWeight.Bold) }, onClick = { newType = ""; typeMenu = false })
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(start, { start = it }, Modifier.weight(1f), label = { Text("Starts (MM/DD)") }, singleLine = true)
-                    OutlinedTextField(end, { end = it }, Modifier.weight(1f), label = { Text("Ends (MM/DD)") }, singleLine = true)
+                    OutlinedTextField(start, { start = it }, Modifier.weight(1f), label = { Text("Starts MM/DD/YYYY") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    OutlinedTextField(end, { end = it }, Modifier.weight(1f), label = { Text("Ends MM/DD/YYYY") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                 }
-                OutlinedTextField(deal, { deal = it }, Modifier.fillMaxWidth(), label = { Text("Deal, e.g. 2 for \$5") }, singleLine = true)
-                PrimaryButton("Add promotion", Modifier.fillMaxWidth(), enabled = product != null) {
-                    val p = product ?: return@PrimaryButton
-                    repo.addPromo(p.code, p.name, store, start.trim(), end.trim(), deal.trim())
-                    product = null; start = ""; end = ""; deal = ""
-                    bump()
+                Text("Products (${items.size})", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = C.Muted)
+                items.forEach { code ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(code, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.width(64.dp))
+                        Text(names[code.uppercase()] ?: "", fontSize = 14.sp, modifier = Modifier.weight(1f))
+                        Text("✕", color = C.Red, modifier = Modifier.clickable { items = items - code }.padding(8.dp))
+                    }
+                }
+                SecondaryButton(if (items.isEmpty()) "Pick products" else "Add more products") { picking = true }
+                error?.let { Banner(it, C.AmberSoft, C.Amber) }
+                PrimaryButton("Add promotion", Modifier.fillMaxWidth(), enabled = banner.isNotEmpty() && type.isNotEmpty() && items.isNotEmpty()) {
+                    val s0 = parseLooseDate(start, today)
+                    val e0 = parseLooseDate(end, today)
+                    error = when {
+                        s0 == null || e0 == null -> "Enter both dates, like 10/10/2026."
+                        s0.isAfter(e0) -> "The end date is before the start date."
+                        else -> null
+                    }
+                    if (error == null && s0 != null && e0 != null) {
+                        repo.addPromoV2(banner, type, items, s0, e0)
+                        banner = ""; type = ""; start = ""; end = ""; items = emptyList()
+                        bump()
+                    }
                 }
             }
         }
     }
-    if (picking) ProductPicker(onPick = { product = it; picking = false }, onDismiss = { picking = false })
+    if (picking) MultiProductPicker(already = items.toSet(), onAdd = { codes -> items = (items + codes).distinct(); picking = false }, onDismiss = { picking = false })
+    newType?.let { t ->
+        AlertDialog(
+            onDismissRequest = { newType = null },
+            title = { Text("New sale type") },
+            text = { OutlinedTextField(t, { newType = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Name, e.g. Weekly Ad") }) },
+            confirmButton = { TextButton(onClick = { val n = t.trim(); if (n.isNotEmpty()) { SaleTypes.add(ctx, n); type = n }; newType = null }) { Text("Add", fontWeight = FontWeight.Bold) } },
+            dismissButton = { TextButton(onClick = { newType = null }) { Text("Cancel") } },
+        )
+    }
     deleting?.let { p ->
-        ConfirmDialog("Remove this promotion?", "${p.code} ${p.name} · ${p.deal}", "Remove",
-            onConfirm = { repo.deletePromo(p.id); bump() }, onDismiss = { deleting = null })
+        ConfirmDialog("Remove this promotion?", "${p.banner} — ${p.type}, ${promoDates(p.start, p.end)} (${p.items.size} products)", "Remove",
+            onConfirm = { repo.deletePromoV2(p.id); bump() }, onDismiss = { deleting = null })
     }
 }
 

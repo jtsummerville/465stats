@@ -618,7 +618,7 @@ private fun readCodeList(ctx: Context, uri: Uri): List<String> {
 
 /** Search, tick as many products as you like, add them all at once. */
 @Composable
-private fun MultiProductPicker(already: Set<String>, onAdd: (List<String>) -> Unit, onDismiss: () -> Unit) {
+fun MultiProductPicker(already: Set<String>, onAdd: (List<String>) -> Unit, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val repo = remember { Db.get(ctx) }
     var q by remember { mutableStateOf("") }

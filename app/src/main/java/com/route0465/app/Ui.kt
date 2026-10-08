@@ -60,6 +60,7 @@ object C {
     val Red = Color(0xFF8E2117)
     val RedSoft = Color(0xFFFBE9E7)
     val Row = Color(0xFFF7F8F6)
+    val Blue = Color(0xFF2D6CB5)
 }
 
 @Composable
