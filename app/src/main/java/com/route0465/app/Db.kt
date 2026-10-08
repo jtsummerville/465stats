@@ -54,7 +54,7 @@ data class StockRow(
 }
 
 data class Product(val code: String, val name: String, val casePack: Double)
-data class OrderItem(val code: String, val name: String, val position: Int, val qty: Int)
+data class OrderItem(val code: String, val name: String, val position: Int, val qty: Int, val ranShort: Boolean = false, val shortBy: Int = 0)
 data class Promo(val id: Long, val code: String, val name: String, val store: String, val start: String, val end: String, val deal: String)
 data class Shortage(val id: Long, val date: String, val code: String, val name: String, val qty: Double, val kind: String)
 data class Rate(val marketRate: Double, val commissionPct: Double, val creditPct: Double)
@@ -124,6 +124,12 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
         db.execSQL("CREATE TABLE IF NOT EXISTS store_photos(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, cus_code TEXT, store TEXT, path TEXT, taken_at INTEGER)")
         db.execSQL("CREATE TABLE IF NOT EXISTS eod_pdfs(date TEXT PRIMARY KEY, path TEXT, name TEXT, received_at TEXT)")
         createPromoTables(db)
+        db.execSQL("CREATE TABLE IF NOT EXISTS order_history(delivery TEXT, code TEXT, ordered INTEGER, suggested INTEGER, ran_short INTEGER, short_by INTEGER)")
+        listOf("ran_short INTEGER DEFAULT 0", "short_by INTEGER DEFAULT 0").forEach { col ->
+            val name = col.substringBefore(' ')
+            val has = db.list("PRAGMA table_info(order_items)") { it.getString(1) }.contains(name)
+            if (!has) db.execSQL("ALTER TABLE order_items ADD COLUMN $col")
+        }
     }
 
     // ---------- end of day paperwork ----------
@@ -278,8 +284,45 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
     // ---------- order guide ----------
 
     fun orderItems(): List<OrderItem> = readableDatabase.list(
-        "SELECT o.code, o.position, o.qty, COALESCE(p.name, '') AS name FROM order_items o LEFT JOIN products p ON p.code=o.code ORDER BY o.position"
-    ) { c -> OrderItem(c.s("code"), c.s("name"), c.i("position"), c.i("qty")) }
+        "SELECT o.code, o.position, o.qty, COALESCE(o.ran_short, 0) AS ran_short, COALESCE(o.short_by, 0) AS short_by, " +
+            "COALESCE(p.name, '') AS name FROM order_items o LEFT JOIN products p ON p.code=o.code ORDER BY o.position"
+    ) { c -> OrderItem(c.s("code"), c.s("name"), c.i("position"), c.i("qty"), c.i("ran_short") == 1, c.i("short_by")) }
+
+    /** Ran short on the last delivery, and by how many cases (Taco-Boys "Ran short / Short by"). */
+    fun setRanShort(code: String, ran: Boolean, shortBy: Int) {
+        writableDatabase.update("order_items", ContentValues().apply {
+            put("ran_short", if (ran) 1 else 0); put("short_by", if (ran) shortBy.coerceAtLeast(0) else 0)
+        }, "code=?", arrayOf(code))
+    }
+
+    /** Keeps a copy of each emailed order (by delivery date) so suggestions can learn from it later. */
+    fun saveOrderHistory(delivery: LocalDate, items: List<OrderItem>, suggested: Map<String, Int?>) {
+        val w = writableDatabase
+        w.beginTransaction()
+        try {
+            w.delete("order_history", "delivery=?", arrayOf(delivery.toString()))
+            items.forEach { item ->
+                w.insert("order_history", null, ContentValues().apply {
+                    put("delivery", delivery.toString()); put("code", item.code); put("ordered", item.qty)
+                    put("ran_short", if (item.ranShort) 1 else 0); put("short_by", item.shortBy)
+                    suggested[item.code]?.let { s -> put("suggested", s) }
+                })
+            }
+            w.setTransactionSuccessful()
+        } finally {
+            w.endTransaction()
+        }
+    }
+
+    /** Units sold (not credits) per product per day, from tickets that weren't voided. */
+    fun unitsSoldBetween(from: LocalDate, to: LocalDate): List<Triple<LocalDate, String, Double>> = readableDatabase.list(
+        "SELECT l.date, l.code, SUM(l.qty) FROM lines l JOIN docs d ON d.date=l.date AND d.dmd_code=l.dmd_code " +
+            "WHERE l.date>=? AND l.date<=? AND d.voided=0 AND l.is_return=0 GROUP BY l.date, l.code",
+        arrayOf(from.toString(), to.toString())
+    ) { c -> Triple(LocalDate.parse(c.getString(0)), c.getString(1), c.getDouble(2)) }
+
+    fun casePacks(): Map<String, Double> =
+        readableDatabase.list("SELECT code, case_pack FROM products") { c -> c.getString(0).uppercase() to c.getDouble(1) }.toMap()
 
     fun addOrderItem(code: String) {
         val next = readableDatabase.list("SELECT COALESCE(MAX(position), 0) + 1 FROM order_items") { it.getInt(0) }.first()
@@ -359,7 +402,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
     }
 
     fun clearOrderQty() {
-        writableDatabase.execSQL("UPDATE order_items SET qty=0")
+        writableDatabase.execSQL("UPDATE order_items SET qty=0, ran_short=0, short_by=0")
     }
 
     // ---------- promos / shortages ----------

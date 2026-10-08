@@ -16,6 +16,8 @@ import androidx.compose.material3.Text
 import androidx.compose.foundation.border
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -52,6 +54,11 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
     val cycle = orderCycle()
     val promos = remember(v) { promoTags(repo.promosV2(), bannersFor(repo.stores().map { it.second }).toSet() - ALL_BANNERS, cycle) }
     var promoInfo by remember { mutableStateOf<Pair<String, PromoTag>?>(null) }
+    val onHandU = remember(onHand) { onHand.mapKeys { it.key.uppercase() } }
+    val sugg = remember(v) { Suggest.compute(repo, items, onHandU, stockDate, cycle.first) }
+    // Ran short last delivery, and by how many cases (Taco-Boys "Ran short / Short by").
+    val ran = remember(v) { mutableStateMapOf<String, Pair<Boolean, Int>>().apply { items.forEach { put(it.code, it.ranShort to it.shortBy) } } }
+    var showHow by remember { mutableStateOf(false) }
     val due = nextOrderDue()
     var message by remember { mutableStateOf<String?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
@@ -60,7 +67,11 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
     // Quantities live here while you type; each change is saved straight away.
     val qty = remember(v) { mutableStateMapOf<String, Int>().apply { items.forEach { put(it.code, it.qty) } } }
     val total = qty.values.sum()
-    val current = { items.map { it.copy(qty = qty[it.code] ?: 0) } }
+    val current = {
+        items.map { it.copy(qty = qty[it.code] ?: 0, ranShort = ran[it.code]?.first ?: false, shortBy = ran[it.code]?.second ?: 0) }
+    }
+    val setRan = { code: String, r: Boolean, by: Int -> ran[code] = r to (if (r) by else 0); repo.setRanShort(code, r, by) }
+    val flagged = { code: String -> val n = qty[code] ?: 0; val s = sugg[code]?.cases; n > 0 && s != null && kotlin.math.abs(n - s) > Suggest.FLAG_CASES }
     val setQty = { code: String, n: Int -> val c = n.coerceIn(0, 9999); qty[code] = c; repo.setOrderQty(code, c) }
     val shown = remember(items, q) {
         val s = q.trim().lowercase()
@@ -80,6 +91,7 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                         try {
                             val f = OrderPdf.build(ctx, current(), due)
                             OrderPdf.email(ctx, f, Prefs.orderEmail(ctx), due, total)
+                            repo.saveOrderHistory(cycle.first, current(), sugg.mapValues { it.value.cases })
                             message = if (Prefs.orderEmail(ctx).isBlank()) "Tip: set the order email address in Setup so it fills in by itself." else null
                         } catch (e: Exception) {
                             message = "Couldn't make the email: ${e.message}"
@@ -109,6 +121,19 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                     SecondaryButton("Edit order") { editing = true }
                 }
             }
+            Text(
+                "${qty.values.count { it > 0 }} items · $total cases · ${items.count { flagged(it.code) }} flags · ${ran.values.count { it.first }} ran short",
+                fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+            )
+            Row(Modifier.fillMaxWidth().clickable { showHow = !showHow }, verticalAlignment = Alignment.CenterVertically) {
+                Text("How Suggested is figured", fontSize = 14.sp, color = C.Green, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text(if (showHow) "▴" else "▾", color = C.Green)
+            }
+            if (showHow) Muted(
+                "Average cases sold per week over your last 4 full Sat–Fri weeks, enough to last from the last inventory to this delivery (${cycle.first.format(Fmt.day)}) and through the next 7 days, plus what you ran short by, minus what's on hand, rounded up. " +
+                    "Promotions aren't added in; the tag tells you to stock up or bump. A ! means your order is more than ${Suggest.FLAG_CASES} cases off the suggestion. " +
+                    "It gets better as more days are imported; with no sales yet it shows —.", 13,
+            )
             Muted(
                 (if (editing) "Type the cases or use − +. Tap Done to lock it." else "Locked. Tap Edit order to change quantities.") +
                     " On hand is from the last import${stockDate?.let { " (" + it.format(Fmt.day) + ")" } ?: ""}." +
@@ -118,8 +143,9 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                 LazyColumn(Modifier.fillMaxSize()) {
                     itemsIndexed(shown, key = { _, x -> x.code }) { i, item ->
                         if (i > 0) HorizontalDivider(color = C.Divider)
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
                         Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                            Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             Text(item.code, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, color = C.Ink, modifier = Modifier.width(70.dp))
@@ -139,6 +165,15 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                                 )
                             }
                             val n = qty[item.code] ?: 0
+                            Column(horizontalAlignment = Alignment.End, modifier = Modifier.width(62.dp)) {
+                                Text("Sugg.", fontSize = 11.sp, color = C.Muted)
+                                Text(sugg[item.code]?.cases?.toString() ?: "—", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = C.Muted)
+                            }
+                            Text(
+                                if (flagged(item.code)) "!" else "", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.width(22.dp).clip(RoundedCornerShape(6.dp)).background(if (flagged(item.code)) C.Red else Color.Transparent),
+                            )
                             if (editing) {
                                 StepButton("−", dark = false) { setQty(item.code, n - 1) }
                                 QtyField(n) { setQty(item.code, it) }
@@ -149,6 +184,23 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                                     color = if (n == 0) C.Line else C.Ink, textAlign = TextAlign.End, modifier = Modifier.width(96.dp),
                                 )
                             }
+                        }
+                        val (isShort, by) = ran[item.code] ?: (false to 0)
+                        if (editing) {
+                            Row(Modifier.padding(start = 70.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(Modifier.clickable { setRan(item.code, !isShort, by) }, verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(isShort, { setRan(item.code, it, by) }, colors = CheckboxDefaults.colors(checkedColor = C.Amber))
+                                    Text("Ran short last delivery", fontSize = 14.sp)
+                                }
+                                if (isShort) {
+                                    Text("by", fontSize = 14.sp, color = C.Muted)
+                                    QtyField(by) { setRan(item.code, true, it) }
+                                    Text("cases", fontSize = 14.sp, color = C.Muted)
+                                }
+                            }
+                        } else if (isShort) {
+                            Text("Ran short last delivery" + if (by > 0) " by $by cs" else "", fontSize = 13.sp, color = C.Amber, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 82.dp))
+                        }
                         }
                     }
                 }
@@ -172,7 +224,7 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
         )
     }
     if (confirmClear) {
-        ConfirmDialog("Clear all quantities?", "Sets every product on the order guide back to 0 cases.", "Clear",
+        ConfirmDialog("Clear all quantities?", "Sets every product back to 0 cases and clears the Ran short marks, ready for next week's order.", "Clear",
             onConfirm = { repo.clearOrderQty(); bump() }, onDismiss = { confirmClear = false })
     }
 }

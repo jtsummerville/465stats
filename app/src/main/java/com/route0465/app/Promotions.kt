@@ -122,3 +122,33 @@ fun promoTags(promos: List<PromoV2>, routeBanners: Set<String>, cycle: Pair<Loca
         PromoTag(if (lines.size == 1) lines[0].type else "PROMO ×${lines.size}", state, lines)
     }
 }
+
+/** One promo during one Sat–Fri week: which banner and type, which products, and how much of the week. */
+data class PromoWeekLine(val banner: String, val type: String, val codes: List<String>, val coverage: String)
+
+/** Like Taco-Boys promos_by_week: for each week in [from, to] (newest first), the promos that overlap it. */
+fun promosByWeek(promos: List<PromoV2>, routeBanners: Set<String>, from: LocalDate, to: LocalDate): List<Pair<LocalDate, List<PromoWeekLine>>> {
+    val dayName = DateTimeFormatter.ofPattern("EEE", Locale.US)
+    val out = ArrayList<Pair<LocalDate, List<PromoWeekLine>>>()
+    var ws = Periods.weekStart(to)
+    val first = Periods.weekStart(from)
+    while (!ws.isBefore(first)) {
+        val we = ws.plusDays(6)
+        val lines = promos.filter { p ->
+            !(p.end.isBefore(ws) || p.start.isAfter(we)) &&
+                (p.banner == ALL_BANNERS || routeBanners.isEmpty() || p.banner in routeBanners)
+        }.sortedBy { it.start }.map { p ->
+            val a = if (p.start.isAfter(ws)) p.start else ws
+            val b = if (p.end.isBefore(we)) p.end else we
+            val cov = when {
+                a == ws && b == we -> "all week"
+                a == b -> "${a.format(dayName)} only"
+                else -> "${a.format(dayName)}–${b.format(dayName)}"
+            }
+            PromoWeekLine(p.banner, p.type, p.items, cov)
+        }
+        if (lines.isNotEmpty()) out.add(ws to lines)
+        ws = ws.minusDays(7)
+    }
+    return out
+}

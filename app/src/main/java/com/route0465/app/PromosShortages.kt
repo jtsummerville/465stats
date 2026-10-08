@@ -56,8 +56,6 @@ fun PromosScreen(v: Int, bump: () -> Unit) {
     var end by remember { mutableStateOf("") }
     var items by remember { mutableStateOf(listOf<String>()) }
     var bannerMenu by remember { mutableStateOf(false) }
-    var typeMenu by remember { mutableStateOf(false) }
-    var newType by remember { mutableStateOf<String?>(null) }
     var picking by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<PromoV2?>(null) }
     var showEnded by remember { mutableStateOf(false) }
@@ -119,13 +117,8 @@ fun PromosScreen(v: Int, bump: () -> Unit) {
                         (banners + ALL_BANNERS).forEach { b -> DropdownMenuItem(text = { Text(b) }, onClick = { banner = b; bannerMenu = false }) }
                     }
                 }
-                Box {
-                    PickField("Sale type", type) { typeMenu = true }
-                    DropdownMenu(expanded = typeMenu, onDismissRequest = { typeMenu = false }) {
-                        SaleTypes.all(ctx).forEach { t -> DropdownMenuItem(text = { Text(t) }, onClick = { type = t; typeMenu = false }) }
-                        DropdownMenuItem(text = { Text("New type…", color = C.Green, fontWeight = FontWeight.Bold) }, onClick = { newType = ""; typeMenu = false })
-                    }
-                }
+                OutlinedTextField(type, { type = it }, Modifier.fillMaxWidth(), singleLine = true,
+                    label = { Text("Sale type or deal, e.g. BOGO, 2 for \$5, Rollback") })
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(start, { start = it }, Modifier.weight(1f), label = { Text("Starts MM/DD/YYYY") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
@@ -142,7 +135,7 @@ fun PromosScreen(v: Int, bump: () -> Unit) {
                 }
                 SecondaryButton(if (items.isEmpty()) "Pick products" else "Add more products") { picking = true }
                 error?.let { Banner(it, C.AmberSoft, C.Amber) }
-                PrimaryButton("Add promotion", Modifier.fillMaxWidth(), enabled = banner.isNotEmpty() && type.isNotEmpty() && items.isNotEmpty()) {
+                PrimaryButton("Add promotion", Modifier.fillMaxWidth(), enabled = banner.isNotEmpty() && type.isNotBlank() && items.isNotEmpty()) {
                     val s0 = parseLooseDate(start, today)
                     val e0 = parseLooseDate(end, today)
                     error = when {
@@ -151,7 +144,7 @@ fun PromosScreen(v: Int, bump: () -> Unit) {
                         else -> null
                     }
                     if (error == null && s0 != null && e0 != null) {
-                        repo.addPromoV2(banner, type, items, s0, e0)
+                        repo.addPromoV2(banner, type.trim(), items, s0, e0)
                         banner = ""; type = ""; start = ""; end = ""; items = emptyList()
                         bump()
                     }
@@ -160,15 +153,6 @@ fun PromosScreen(v: Int, bump: () -> Unit) {
         }
     }
     if (picking) MultiProductPicker(already = items.toSet(), onAdd = { codes -> items = (items + codes).distinct(); picking = false }, onDismiss = { picking = false })
-    newType?.let { t ->
-        AlertDialog(
-            onDismissRequest = { newType = null },
-            title = { Text("New sale type") },
-            text = { OutlinedTextField(t, { newType = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Name, e.g. Weekly Ad") }) },
-            confirmButton = { TextButton(onClick = { val n = t.trim(); if (n.isNotEmpty()) { SaleTypes.add(ctx, n); type = n }; newType = null }) { Text("Add", fontWeight = FontWeight.Bold) } },
-            dismissButton = { TextButton(onClick = { newType = null }) { Text("Cancel") } },
-        )
-    }
     deleting?.let { p ->
         ConfirmDialog("Remove this promotion?", "${p.banner} — ${p.type}, ${promoDates(p.start, p.end)} (${p.items.size} products)", "Remove",
             onConfirm = { repo.deletePromoV2(p.id); bump() }, onDismiss = { deleting = null })

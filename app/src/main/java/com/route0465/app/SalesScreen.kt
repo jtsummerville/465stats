@@ -39,17 +39,32 @@ import java.time.LocalDate
 import kotlin.math.abs
 import kotlin.math.max
 
-/** The time windows the Sales screen offers, newest data always ending today. */
-enum class SalesRange(val label: String) {
-    Today("Today"), Week("This week"), TwoWeeks("2 weeks"), FourWeeks("4 weeks"), Month("This month"), Year("Year to date");
+/** The time windows the Sales screen offers. Back = how many periods before the current one. */
+enum class SalesRange(val label: String, val unit: String) {
+    Today("Day", "day"), Week("Week", "week"), TwoWeeks("2 weeks", "2 weeks"), FourWeeks("4 weeks", "4 weeks"), Month("Month", "month"), Year("Year", "year");
 
-    fun start(today: LocalDate): LocalDate = when (this) {
-        Today -> today
-        Week -> Periods.weekStart(today)
-        TwoWeeks -> Periods.weekStart(today).minusDays(7)
-        FourWeeks -> Periods.weekStart(today).minusDays(21)
-        Month -> today.withDayOfMonth(1)
-        Year -> today.withDayOfYear(1)
+    /** [from, to] for this window, [back] periods ago; the current period ends today. */
+    fun window(today: LocalDate, back: Int): Pair<LocalDate, LocalDate> {
+        val ws = Periods.weekStart(today)
+        val (from, to) = when (this) {
+            Today -> today.minusDays(back.toLong()).let { it to it }
+            Week -> ws.minusDays(7L * back).let { it to it.plusDays(6) }
+            TwoWeeks -> ws.minusDays(7 + 14L * back).let { it to it.plusDays(13) }
+            FourWeeks -> ws.minusDays(21 + 28L * back).let { it to it.plusDays(27) }
+            Month -> today.withDayOfMonth(1).minusMonths(back.toLong()).let { it to it.plusMonths(1).minusDays(1) }
+            Year -> today.withDayOfYear(1).minusYears(back.toLong()).let { it to it.plusYears(1).minusDays(1) }
+        }
+        return from to (if (to.isAfter(today)) today else to)
+    }
+
+    fun title(today: LocalDate, back: Int): String {
+        val (from, to) = window(today, back)
+        return when (this) {
+            Today -> if (back == 0) "Today · ${from.format(Fmt.full)}" else from.format(Fmt.full)
+            Month -> from.format(java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy", java.util.Locale.US)) + if (back == 0) " (to date)" else ""
+            Year -> "${from.year}" + if (back == 0) " (year to date)" else ""
+            else -> "${from.format(Fmt.full)} –\n${to.format(Fmt.full)}"
+        }
     }
 }
 
@@ -77,11 +92,13 @@ fun SalesScreen(v: Int) {
     val repo = remember { Db.get(ctx) }
     val today = LocalDate.now()
     var range by rememberSaveable { mutableStateOf(SalesRange.Today) }
+    var back by rememberSaveable { mutableStateOf(0) }
     var view by rememberSaveable { mutableStateOf(0) }
-    val from = range.start(today)
+    val (from, to) = range.window(today, back)
 
-    val rows = remember(v, range) { repo.linesBetween(from, today) }
-    val voids = remember(v, range) { repo.voidsBetween(from, today) }
+    val rows = remember(v, range, back) { repo.linesBetween(from, to) }
+    val voids = remember(v, range, back) { repo.voidsBetween(from, to) }
+    val promoWeeks = remember(v, range, back) { promosByWeek(repo.promosV2(), bannersFor(repo.stores().map { it.second }).toSet(), from, to) }
     val sales = rows.filter { !it.second.isReturn }
     val credits = rows.filter { it.second.isReturn }
     val gross = sales.sumOf { it.second.net }
@@ -91,24 +108,27 @@ fun SalesScreen(v: Int) {
     val rate = if (gross > 0) creditDollars / gross else 0.0
 
     ScreenColumn {
-        // ---- Period menu + view switch ----
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            RangeMenu(range) { range = it }
+        // ---- Period menu, back/forward arrows, view switch ----
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            RangeMenu(range) { range = it; back = 0 }
+            SalesArrow(left = true) { back += 1 }
             Column(Modifier.weight(1f)) {
-                Text(
-                    if (range == SalesRange.Today) today.format(Fmt.full) else "${from.format(Fmt.day)} – ${today.format(Fmt.day)}",
-                    fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
-                )
+                Text(range.title(today, back), fontSize = 17.sp, fontWeight = FontWeight.Bold, lineHeight = 22.sp)
                 Muted("${routeDays.size} route day" + if (routeDays.size == 1) "" else "s", 13)
             }
+            SalesArrow(left = false, enabled = back > 0) { back -= 1 }
             if (LocalWide.current) Segmented(listOf("Overview", "By store"), view) { view = it }
         }
+        if (back > 0) Text(
+            "Back to the current ${range.unit}", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+            modifier = Modifier.clickable { back = 0 }.padding(vertical = 4.dp),
+        )
         if (!LocalWide.current) Segmented(listOf("Overview", "By store"), view) { view = it }
 
         if (rows.isEmpty()) {
             Panel {
-                H2(if (range == SalesRange.Today) "Today isn't imported yet" else "No sales in this window")
-                Muted(if (range == SalesRange.Today) "Sales show up after today's End of Day import. Pick a longer window above to see earlier days." else "Pick a longer window, or import a day first.")
+                H2(if (range == SalesRange.Today && back == 0) "Today isn't imported yet" else "No sales in this window")
+                Muted(if (range == SalesRange.Today && back == 0) "Sales show up after today's End of Day import. Use the ‹ arrow to look at earlier days." else "Use the arrows to look at another ${range.unit}, or pick a different window.")
             }
         } else if (view == 0) {
             // ---- Overview: main sales, then credits right under ----
@@ -183,6 +203,23 @@ fun SalesScreen(v: Int) {
                             Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
                                 Text("${d.format(Fmt.md)} · ${l.store} · ${l.code} ${l.name} · ${Fmt.qty(l.qty)}", fontSize = 14.sp, modifier = Modifier.weight(1f))
                                 Text(Fmt.money(-abs(l.net)), fontSize = 14.sp, color = C.Red, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (promoWeeks.isNotEmpty()) {
+                Panel {
+                    H2("Promotions in this window")
+                    Muted("What was on sale each Sat–Fri week, for the banners on your route.", 13)
+                    promoWeeks.forEach { (wk, lines) ->
+                        HorizontalDivider(color = C.Divider)
+                        Text("Week of ${wk.format(Fmt.full)}", fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp))
+                        lines.forEach { l ->
+                            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                                Text("${l.banner} — ${l.type}", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                Text("${l.coverage} · ${l.codes.joinToString(", ")}", fontSize = 14.sp, color = C.Muted)
                             }
                         }
                     }
@@ -346,5 +383,17 @@ private fun RateMeter(rate: Double) {
             val x = w * (t / 100.0 / scale).toFloat()
             Text("$t%", fontSize = 11.sp, color = C.Muted, modifier = Modifier.offset(x = if (t == 0) x else x - 10.dp))
         }
+    }
+}
+
+@Composable
+private fun SalesArrow(left: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
+    Box(
+        Modifier.width(56.dp).height(56.dp).clip(shape).background(if (enabled) Color.White else C.Ground)
+            .border(2.dp, if (enabled) C.Green else C.Line, shape).clickable(enabled = enabled) { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(if (left) "‹" else "›", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = if (enabled) C.Green else C.Line)
     }
 }
