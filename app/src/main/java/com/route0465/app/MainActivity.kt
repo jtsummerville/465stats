@@ -1,6 +1,7 @@
 package com.route0465.app
 
 import android.Manifest
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -21,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
@@ -34,6 +36,7 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +56,7 @@ import java.time.LocalDate
 
 enum class Screen(val label: String, val title: String, val icon: ImageVector) {
     Home("Home", "Home", Icons.Filled.Home),
+    Paperwork("Paperwork", "End of Day paperwork", Icons.Filled.Email),
     Pay("Pay", "Pay", Icons.Filled.DateRange),
     Sales("Sales", "Sales", Icons.Filled.List),
     Inventory("Inventory", "Inventory", Icons.Filled.Info),
@@ -64,11 +68,35 @@ enum class Screen(val label: String, val title: String, val icon: ImageVector) {
 
 class MainActivity : ComponentActivity() {
     private val version = mutableStateOf(0)
+    private val goTo = mutableStateOf<Screen?>(null)
+    private val shareMsg = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
-        setContent { AppTheme { AppRoot(version) } }
+        setContent { AppTheme { AppRoot(version, goTo, shareMsg) } }
+        if (savedInstanceState == null) handleShare(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleShare(intent)
+    }
+
+    /** XSales's End of Day PDF shared to 465stats: save it as today's and open the Paperwork screen. */
+    private fun handleShare(i: Intent?) {
+        if (i == null || (i.action != Intent.ACTION_SEND && i.action != Intent.ACTION_SEND_MULTIPLE)) return
+        val uris = Paperwork.sharedUris(i)
+        setIntent(Intent(this, MainActivity::class.java))
+        val ctx = applicationContext
+        Thread {
+            val msg = try { Paperwork.receiveEod(ctx, uris) } catch (e: Exception) { "Couldn't take that file: ${e.message}" }
+            runOnUiThread {
+                shareMsg.value = msg
+                goTo.value = Screen.Paperwork
+                version.value = version.value + 1
+            }
+        }.start()
     }
 
     override fun onResume() {
@@ -78,14 +106,22 @@ class MainActivity : ComponentActivity() {
         Thread {
             val r = try { AutoImport.check(ctx) } catch (_: Exception) { null }
             try { DataBackup.auto(ctx) } catch (_: Exception) { }
+            try { Paperwork.prune(ctx) } catch (_: Exception) { }
             if (r != null) runOnUiThread { version.value = version.value + 1 }
         }.start()
     }
 }
 
 @Composable
-fun AppRoot(version: MutableState<Int>) {
+fun AppRoot(version: MutableState<Int>, goTo: MutableState<Screen?>, shareMsg: MutableState<String?>) {
     var screen by rememberSaveable { mutableStateOf(Screen.Home) }
+    val target = goTo.value
+    LaunchedEffect(target) {
+        if (target != null) {
+            screen = target
+            goTo.value = null
+        }
+    }
     val v = version.value
     val bump: () -> Unit = { version.value = version.value + 1 }
     val go: (Screen) -> Unit = { screen = it }
@@ -120,6 +156,7 @@ fun AppRoot(version: MutableState<Int>) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (screen) {
                     Screen.Home -> HomeScreen(v, bump, go)
+                    Screen.Paperwork -> PaperworkScreen(v, bump, shareMsg)
                     Screen.Pay -> PayScreen(v)
                     Screen.Sales -> SalesScreen(v)
                     Screen.Inventory -> InventoryScreen(v)

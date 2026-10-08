@@ -94,6 +94,9 @@ object Prefs {
     fun lastAftModified(ctx: Context): Long = sp(ctx).getLong("last_aft_modified", 0L)
     fun setLastAftModified(ctx: Context, v: Long) = sp(ctx).edit().putLong("last_aft_modified", v).apply()
 
+    fun bossEmails(ctx: Context): String = sp(ctx).getString("boss_emails", "") ?: ""
+    fun setBossEmails(ctx: Context, v: String) = sp(ctx).edit().putString("boss_emails", v).apply()
+
     fun backupPassword(ctx: Context): String = sp(ctx).getString("backup_password", "") ?: ""
     fun setBackupPassword(ctx: Context, v: String) = sp(ctx).edit().putString("backup_password", v).apply()
 

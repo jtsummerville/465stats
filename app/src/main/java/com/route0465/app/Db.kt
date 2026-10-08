@@ -58,6 +58,8 @@ data class OrderItem(val code: String, val name: String, val position: Int, val 
 data class Promo(val id: Long, val code: String, val name: String, val store: String, val start: String, val end: String, val deal: String)
 data class Shortage(val id: Long, val date: String, val code: String, val name: String, val qty: Double, val kind: String)
 data class Rate(val marketRate: Double, val commissionPct: Double, val creditPct: Double)
+data class StorePhoto(val id: Long, val date: String, val cusCode: String, val store: String, val path: String, val takenAt: Long)
+data class EodPdf(val date: String, val path: String, val name: String, val receivedAt: String)
 
 fun <T> SQLiteDatabase.list(sql: String, args: Array<String> = emptyArray(), map: (Cursor) -> T): List<T> {
     val out = ArrayList<T>()
@@ -70,7 +72,7 @@ fun Cursor.d(col: String): Double = getDouble(getColumnIndexOrThrow(col))
 fun Cursor.i(col: String): Int = getInt(getColumnIndexOrThrow(col))
 fun Cursor.l(col: String): Long = getLong(getColumnIndexOrThrow(col))
 
-class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db", null, 1) {
+class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db", null, 2) {
 
     companion object {
         @Volatile
@@ -105,9 +107,57 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
             "CREATE INDEX idx_lines_date ON lines(date)",
             "CREATE INDEX idx_stock_date ON stock(date)",
         ).forEach { db.execSQL(it) }
+        paperworkTables(db)
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        paperworkTables(db)
+    }
+
+    override fun onOpen(db: SQLiteDatabase) {
+        super.onOpen(db)
+        // A restored older backup may lack these; IF NOT EXISTS keeps this harmless.
+        if (!db.isReadOnly) paperworkTables(db)
+    }
+
+    private fun paperworkTables(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS store_photos(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, cus_code TEXT, store TEXT, path TEXT, taken_at INTEGER)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS eod_pdfs(date TEXT PRIMARY KEY, path TEXT, name TEXT, received_at TEXT)")
+    }
+
+    // ---------- end of day paperwork ----------
+
+    fun photos(date: LocalDate): List<StorePhoto> = readableDatabase.list(
+        "SELECT * FROM store_photos WHERE date=? ORDER BY taken_at", arrayOf(date.toString())
+    ) { c -> StorePhoto(c.l("id"), c.s("date"), c.s("cus_code"), c.s("store"), c.s("path"), c.l("taken_at")) }
+
+    fun addPhoto(date: LocalDate, cusCode: String, store: String, path: String) {
+        writableDatabase.insert("store_photos", null, ContentValues().apply {
+            put("date", date.toString()); put("cus_code", cusCode); put("store", store)
+            put("path", path); put("taken_at", System.currentTimeMillis())
+        })
+    }
+
+    fun deletePhoto(id: Long) {
+        writableDatabase.delete("store_photos", "id=?", arrayOf(id.toString()))
+    }
+
+    fun eodPdf(date: LocalDate): EodPdf? = readableDatabase.list(
+        "SELECT * FROM eod_pdfs WHERE date=?", arrayOf(date.toString())
+    ) { c -> EodPdf(c.s("date"), c.s("path"), c.s("name"), c.s("received_at")) }.firstOrNull()
+
+    fun setEodPdf(date: LocalDate, path: String, name: String) {
+        writableDatabase.insertWithOnConflict("eod_pdfs", null, ContentValues().apply {
+            put("date", date.toString()); put("path", path); put("name", name); put("received_at", now())
+        }, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    /** Drops paperwork rows older than [keepFrom]; the files are removed by Paperwork.prune. */
+    fun prunePaperwork(keepFrom: LocalDate) {
+        val a = arrayOf(keepFrom.toString())
+        writableDatabase.delete("store_photos", "date<?", a)
+        writableDatabase.delete("eod_pdfs", "date<?", a)
+    }
 
     // ---------- days / sales ----------
 
