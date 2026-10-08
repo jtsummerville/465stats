@@ -55,7 +55,7 @@ private enum class SetupSection(val title: String) {
     Backups("Backups and password"),
     Stores("Stores and products"),
     Imports("Imports and activity log"),
-    HowItWorks("How it works"),
+    HowItWorks("Reference"),
 }
 
 @Composable
@@ -94,7 +94,7 @@ private fun SetupMenu(v: Int, open: (SetupSection) -> Unit) {
             SetupSection.Backups to (if (Prefs.backupPassword(ctx).isEmpty()) "Off: no password set" else "Password set · " + (backups.firstOrNull()?.name ?: "no backups yet")),
             SetupSection.Stores to "${repo.stores().size} stores · ${repo.productCount()} products",
             SetupSection.Imports to (last?.let { "Last import ${it.date.format(Fmt.day)}" } ?: "No imports yet"),
-            SetupSection.HowItWorks to "The logic behind pay, sales, Suggested, promos and the rest",
+            SetupSection.HowItWorks to "How every number is figured: pay, sales, Suggested, promos and the rest",
         )
     }
     ScreenColumn {

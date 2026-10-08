@@ -87,7 +87,7 @@ fun HomeScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
         Split {
             Panel(Modifier.part(1.25f), pad = 26.dp) {
                 H2("Import today's route")
-                Muted("Run End of Day in XSales first, then tap below. The app copies the XSales backup files, checks they're dated today, and reads only today's tickets.")
+                Muted("Run End of Day in XSales first, then tap below.")
                 PrimaryButton(if (busy) "Importing…" else "End of Day", Modifier.fillMaxWidth(), enabled = !busy && access, big = true) {
                     runImport(false)
                 }

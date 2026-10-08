@@ -228,7 +228,6 @@ fun SalesScreen(v: Int) {
                     }
                 }
                 RateMeter(rate)
-                Muted("Green to 1.5%, amber to 2.5%, red beyond. The line is the 1.5% target. One division over the whole window, never an average of daily rates.", 13)
 
                 if (range != SalesRange.Today && range != SalesRange.Week) {
                     HorizontalDivider(color = C.Divider)

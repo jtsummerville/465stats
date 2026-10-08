@@ -96,7 +96,6 @@ fun PromosScreen(v: Int, bump: () -> Unit) {
         Split {
             Panel(Modifier.part(1.4f)) {
                 H2("Promotions")
-                Muted("This order's delivery cycle: ${cycle.first.format(Fmt.day)} – ${cycle.second.minusDays(1).format(Fmt.day)}. A promo tags its products on the order guide when it lands on that cycle.", 13)
                 if (current.isEmpty()) Muted("No current or upcoming promotions.")
                 current.sortedBy { it.start }.forEach { PromoCard(it) }
                 if (ended.isNotEmpty()) {

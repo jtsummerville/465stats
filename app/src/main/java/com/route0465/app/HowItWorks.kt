@@ -156,7 +156,7 @@ fun HowItWorksSection(back: () -> Unit) {
                 "‹  Setup", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 17.sp,
                 modifier = Modifier.clickable { back() }.padding(vertical = 10.dp, horizontal = 4.dp),
             )
-            Text("How it works", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+            Text("Reference", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
         }
         Muted("The rules behind every number in the app. Tap a part to open it, or search for a word.", 14)
         OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Search, e.g. credit, suggested, void") })

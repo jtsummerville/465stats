@@ -89,7 +89,6 @@ fun PayScreen(v: Int) {
                 }
             }
         }
-        Muted("One number per day. Pay periods are 14 days, two Saturday–Friday weeks, counted from 07/11/2026.", 14)
     }
 }
 

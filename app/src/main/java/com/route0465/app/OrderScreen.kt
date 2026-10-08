@@ -156,14 +156,8 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                 "${qty.values.count { it > 0 }} items · $total cases · ${items.count { flagged(it.code) }} flags · ${ran.values.count { it.first }} ran short",
                 fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
             )
-            Text(
-                "How Suggested is figured ›", fontSize = 14.sp, color = C.Green, fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable { HowLink.pendingTopic = "order"; go(Screen.Setup) }.padding(vertical = 4.dp),
-            )
             Muted(
-                (if (editing) "Type the cases or use − +. Tap Done to lock it." else "Locked. Tap Edit order to change quantities.") +
-                    " On hand is from the last import${stockDate?.let { " (" + it.format(Fmt.day) + ")" } ?: ""}." +
-                    " Promo tags are for delivery ${cycle.first.format(Fmt.day)} – ${cycle.second.minusDays(1).format(Fmt.day)}: filled = stock up, outlined = light bump. Tap a tag for details.", 13,
+                if (editing) "Type the cases or use − +. Tap Done to lock it." else "Locked. Tap Edit order to change quantities.", 13,
             )
             }
             Panel(Modifier.weight(1f).fillMaxWidth(), pad = 0.dp) {
