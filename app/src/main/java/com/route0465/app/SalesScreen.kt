@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.route0465.app
 
 import androidx.compose.foundation.background
@@ -20,6 +22,12 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SelectableDates
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,6 +44,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -55,6 +64,22 @@ enum class SalesRange(val label: String, val unit: String) {
             Year -> today.withDayOfYear(1).minusYears(back.toLong()).let { it to it.plusYears(1).minusDays(1) }
         }
         return from to (if (to.isAfter(today)) today else to)
+    }
+
+    /** How many periods back the window holding [date] is (0 = the current one). */
+    fun backFor(today: LocalDate, date: LocalDate): Int {
+        val d = if (date.isAfter(today)) today else date
+        val ws = Periods.weekStart(today)
+        val end = ws.plusDays(6)
+        val n = when (this) {
+            Today -> ChronoUnit.DAYS.between(d, today)
+            Week -> ChronoUnit.DAYS.between(Periods.weekStart(d), ws) / 7
+            TwoWeeks -> ChronoUnit.DAYS.between(d, end) / 14
+            FourWeeks -> ChronoUnit.DAYS.between(d, end) / 28
+            Month -> ChronoUnit.MONTHS.between(d.withDayOfMonth(1), today.withDayOfMonth(1))
+            Year -> (today.year - d.year).toLong()
+        }
+        return n.toInt().coerceAtLeast(0)
     }
 
     fun title(today: LocalDate, back: Int): String {
@@ -93,6 +118,7 @@ fun SalesScreen(v: Int) {
     val today = LocalDate.now()
     var range by rememberSaveable { mutableStateOf(SalesRange.Today) }
     var back by rememberSaveable { mutableStateOf(0) }
+    var picking by remember { mutableStateOf(false) }
     var view by rememberSaveable { mutableStateOf(0) }
     val (from, to) = range.window(today, back)
 
@@ -119,10 +145,38 @@ fun SalesScreen(v: Int) {
             SalesArrow(left = false, enabled = back > 0) { back -= 1 }
             if (LocalWide.current) Segmented(listOf("Overview", "By store"), view) { view = it }
         }
-        if (back > 0) Text(
-            "Back to the current ${range.unit}", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 14.sp,
-            modifier = Modifier.clickable { back = 0 }.padding(vertical = 4.dp),
-        )
+        Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            Text(
+                "Pick a date…", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                modifier = Modifier.clickable { picking = true }.padding(vertical = 6.dp),
+            )
+            if (back > 0) Text(
+                "Back to the current ${range.unit}", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+                modifier = Modifier.clickable { back = 0 }.padding(vertical = 6.dp),
+            )
+        }
+        if (picking) {
+            val todayMillis = today.toEpochDay() * 86_400_000L
+            val state = rememberDatePickerState(
+                initialSelectedDateMillis = from.toEpochDay() * 86_400_000L,
+                selectableDates = object : SelectableDates {
+                    override fun isSelectableDate(utcTimeMillis: Long) = utcTimeMillis <= todayMillis
+                    override fun isSelectableYear(year: Int) = year <= today.year
+                },
+            )
+            DatePickerDialog(
+                onDismissRequest = { picking = false },
+                confirmButton = {
+                    TextButton(onClick = {
+                        state.selectedDateMillis?.let { ms -> back = range.backFor(today, LocalDate.ofEpochDay(ms / 86_400_000L)) }
+                        picking = false
+                    }) { Text("Show this ${range.unit}", fontWeight = FontWeight.Bold) }
+                },
+                dismissButton = { TextButton(onClick = { picking = false }) { Text("Cancel") } },
+            ) {
+                DatePicker(state = state, title = { Text("Any day in the ${range.unit} you want", modifier = Modifier.padding(start = 24.dp, top = 16.dp)) })
+            }
+        }
         if (!LocalWide.current) Segmented(listOf("Overview", "By store"), view) { view = it }
 
         if (rows.isEmpty()) {
