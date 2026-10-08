@@ -134,6 +134,20 @@ val HOW_TOPICS: List<HowTopic> = listOf(
         ),
     ),
     HowTopic(
+        "scansheet", "Scan sheet and printer", "What prints on the barcode sheet and how the printer is reached",
+        listOf(
+            "What it's for" to "For a store you can't DEX and where the product isn't on hand to scan. It's not an invoice: it's a strip of barcodes with the eaches you're delivering, for the receiver to scan and key in.",
+            "What prints" to "A header with the store name and number, route, date, number of products and total eaches. Then one block per product: code and description, its UPC-A barcode with the digits under it, and the eaches. Then a total.",
+            "Barcodes" to "Taken from the same built-in list as the UPC screen. A product with no UPC on file can't be added.",
+            "Quantity" to "Always in eaches. The \"= 2 cases + 3\" note under a quantity uses the product's case pack and is only shown on the tablet, never printed.",
+            "The sheet is kept" to "Store, date, route and products stay on the tablet until you change them or tap Clear all, so you can reprint any time.",
+            "Printer connection" to "Bluetooth only, straight to a printer already paired in the tablet's Bluetooth settings. Nothing goes over the internet.",
+            "Printer language" to "Zebra printers speak CPCL (older mobile printers like the RW420), ZPL (desktop and most newer ones) or both. On Auto the app asks the printer each time which one it's set to and uses that; if the printer doesn't answer it uses the last one it found, or CPCL.",
+            "Paper width" to "2, 3 or 4 inch at 203 dpi (384, 576 or 832 dots). On 2 inch paper the quantity prints under the barcode instead of beside it.",
+            "Page breaks" to "Each product prints as its own short page, back to back, so a long sheet never overruns the printer's memory.",
+        ),
+    ),
+    HowTopic(
         "backups", "Backups and password", "What's backed up and how it's locked",
         listOf(
             "What's backed up" to "The app's own database: days, sales, pay, rates, order guide, promos, shortages. Not the XSales files and not the photos.",

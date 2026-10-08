@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
@@ -66,6 +67,7 @@ enum class Screen(val label: String, val title: String, val icon: ImageVector) {
     Inventory("Inventory", "Inventory", Icons.Filled.Info),
     Order("Order", "Order guide", Icons.Filled.ShoppingCart),
     Upc("UPC", "Product UPC lookup", Icons.Filled.Search),
+    ScanSheet("Scan sheet", "Scan sheet", Icons.Filled.Send),
     Promos("Promos", "Promotions", Icons.Filled.Star),
     Shortages("Shortages", "Shortages", Icons.Filled.Warning),
     Setup("Setup", "Setup", Icons.Filled.Settings),
@@ -169,6 +171,7 @@ fun AppRoot(version: MutableState<Int>, goTo: MutableState<Screen?>, shareMsg: M
                     Screen.Inventory -> InventoryScreen(v)
                     Screen.Order -> OrderScreen(v, bump, go)
                     Screen.Upc -> UpcScreen()
+                    Screen.ScanSheet -> ScanSheetScreen(v, go)
                     Screen.Promos -> PromosScreen(v, bump)
                     Screen.Shortages -> ShortagesScreen(v, bump)
                     Screen.Setup -> SetupScreen(v, bump)

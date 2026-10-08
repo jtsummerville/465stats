@@ -33,7 +33,7 @@ import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 
 @Composable
-private fun PickField(label: String, value: String, onClick: () -> Unit) {
+fun PickField(label: String, value: String, onClick: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = C.Muted)
         Panel(Modifier.fillMaxWidth(), pad = 14.dp, onClick = onClick) {
@@ -239,7 +239,7 @@ fun bannerLabel(saved: String): String = when (saved) {
 /** A date box that opens a calendar when tapped. Holds the date as MM/DD/YYYY text. */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun CalendarField(label: String, value: String, fallback: LocalDate?, modifier: Modifier, onPick: (String) -> Unit) {
+fun CalendarField(label: String, value: String, fallback: LocalDate?, modifier: Modifier, onPick: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box(modifier) {
         OutlinedTextField(
