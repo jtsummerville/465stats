@@ -114,6 +114,14 @@ class MainActivity : ComponentActivity() {
             val r = try { AutoImport.check(ctx) } catch (_: Exception) { null }
             try { DataBackup.auto(ctx) } catch (_: Exception) { }
             try { Paperwork.prune(ctx) } catch (_: Exception) { }
+            // One time: credits that XSales put on invoice-type tickets were saved as negative sales. Mark them as credits.
+            try {
+                val sp = ctx.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+                if (!sp.getBoolean("credit_lines_fixed_v1", false)) {
+                    if (Db.get(ctx).fixNegativeSaleLines() > 0) Db.get(ctx).recomputePay()
+                    sp.edit().putBoolean("credit_lines_fixed_v1", true).apply()
+                }
+            } catch (_: Exception) { }
             // One time after this update: refigure pay on days imported before their rates were uploaded.
             try {
                 val sp = ctx.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)

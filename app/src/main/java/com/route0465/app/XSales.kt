@@ -239,7 +239,10 @@ object XSales {
                 val q = r.num("iprQuantity")
                 val price = r.num("iprPrice")
                 val net = r.g("iprNetAmount")?.toDoubleOrNull() ?: (q * price)
-                if (q != 0.0) lines += Ln(doc, pc, name, abs(q), price, if (doc.isReturn) -abs(net) else net, doc.isReturn, doc.isBuyback)
+                // XSales can put a credit on a ticket typed as an invoice (e.g. a credit-only stop): the line itself
+                // is negative. Any negative line is a credit, whatever the ticket type.
+                val lineRet = doc.isReturn || q < 0 || net < 0
+                if (q != 0.0) lines += Ln(doc, pc, name, abs(q), price, if (lineRet) -abs(net) else net, lineRet, doc.isBuyback)
                 val dq = r.num("iprDamageReturnQuantity")
                 if (!doc.isReturn && dq > 0) {
                     val da = r.g("iprDamageReturnAmount")?.toDoubleOrNull() ?: (dq * price)

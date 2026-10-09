@@ -322,6 +322,13 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
         }
     }
 
+    /** One-time repair: sale lines saved with a negative amount were really credits (credit lines on an invoice ticket). */
+    fun fixNegativeSaleLines(): Int {
+        val w = writableDatabase
+        w.execSQL("UPDATE lines SET is_return=1 WHERE COALESCE(is_return,0)=0 AND net<0")
+        return w.list("SELECT changes()") { it.getInt(0) }.firstOrNull() ?: 0
+    }
+
     /**
      * Figures pay again for imported days in pay periods that aren't locked yet, from their saved lines and
      * the rates in effect on each day's own date. Same math as an import. Locked periods are never touched.

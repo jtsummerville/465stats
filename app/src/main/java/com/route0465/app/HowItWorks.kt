@@ -50,6 +50,7 @@ val HOW_TOPICS: List<HowTopic> = listOf(
             "Rates used" to "For each product the app uses the market rate and the commission % / credit % in effect on that day: the newest rate whose effective date is on or before the day.",
             "A sale line" to "cases or units × market rate × commission %.",
             "A credit (return) line" to "−(qty × market rate × commission %) − qty × market rate × (1 − credit %). You lose the commission you earned, plus the part of the product's value Ole doesn't credit back.",
+            "Which lines are credits" to "Every line on a credit ticket, plus any line with a negative quantity or amount on any other ticket. XSales sometimes puts a credit on a ticket labeled INVOICE (a stop with only a credit), and that still counts as a credit. Damage returns on a sale ticket count as credits too.",
             "A buy back line" to "−(qty × market rate × commission %). A buy back (XSales doc code grt) is the company's return, like product that expired from a planning issue, so you lose only the commission, not the cost.",
             "Default credit %" to "If a rate sheet has no credit %: products 2933–2938 use 10%, everything else 16%.",
             "Damaged goods" to "Damage-return quantities on a sales ticket are counted as credit lines.",
