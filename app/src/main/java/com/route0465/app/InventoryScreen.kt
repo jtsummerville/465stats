@@ -62,31 +62,95 @@ fun InventoryScreen(v: Int) {
                     }
                 }
             } else {
-                val prevDate = dates.getOrNull(1)
-                Panel {
-                    if (prevDate == null) {
-                        Muted("Inventory Check compares two imports. It fills in after your second End of Day.")
-                    } else {
-                        val prev = remember(v, prevDate) { repo.stock(prevDate).associateBy { it.code } }
-                        Muted("Cases at the last two imports: ${prevDate.format(Fmt.day)} and ${latest.format(Fmt.day)}.", 14)
-                        val w = listOf(3.6f, 1f, 1f, 1f)
-                        TableRow(listOf("Product", prevDate.format(Fmt.day), latest.format(Fmt.day), "Change"), w, header = true, endAligned = setOf(1, 2, 3))
-                        val codes = (stock.map { it.code } + prev.keys).distinct().sorted()
-                        val now = stock.associateBy { it.code }
-                        codes.forEach { code ->
-                            val a = prev[code]?.cases ?: 0.0
-                            val b = now[code]?.cases ?: 0.0
-                            val ch = b - a
-                            val name = now[code]?.name ?: prev[code]?.name ?: ""
-                            HorizontalDivider(color = C.Divider)
-                            TableRow(
-                                listOf("$code · $name", Fmt.one(a), Fmt.one(b), (if (ch > 0.05) "+" else "") + Fmt.one(ch)), w,
-                                bold = setOf(3), endAligned = setOf(1, 2, 3),
-                            )
-                        }
-                    }
-                }
+                CheckTab(v, dates)
             }
         }
+    }
+}
+
+/** Inventory Check, Taco-Boys style: one period between two imports at a time, newest first. */
+@Composable
+private fun CheckTab(v: Int, dates: List<java.time.LocalDate>) {
+    val ctx = LocalContext.current
+    val repo = remember { Db.get(ctx) }
+    var idx by remember { mutableStateOf(0) }
+    if (dates.size < 2) {
+        Panel { Muted("Inventory Check compares two imports. It fills in after your second End of Day.") }
+        return
+    }
+    val maxIdx = dates.size - 2
+    val i = idx.coerceIn(0, maxIdx)
+    val curr = dates[i]
+    val prev = dates[i + 1]
+    val r = remember(v, curr, prev) { InventoryCheck.check(repo, prev, curr, dates) }
+
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        SecondaryButton("‹", enabled = i < maxIdx) { idx = i + 1 }
+        androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
+            Text("${prev.format(Fmt.day)}  →  ${curr.format(Fmt.day)}", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Muted(
+                "${r.checked} products checked · " + (if (r.coveredDays.size == 1) "1 route day" else "${r.coveredDays.size} route days") +
+                    if (r.deliveredTotal > 0) " · ${Fmt.qty(r.deliveredTotal)} eaches delivered" else "", 13,
+            )
+        }
+        SecondaryButton("›", enabled = i > 0) { idx = i - 1 }
+    }
+    if (r.missingDays.isNotEmpty()) Banner(
+        "No import for " + r.missingDays.joinToString(", ") { it.format(Fmt.day) } +
+            ". Anything below happened somewhere in this stretch, not on one particular day.",
+        C.AmberSoft, C.Amber,
+    )
+
+    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Tile("Went missing", if (r.drops.isEmpty()) "None" else "${Fmt.qty(-r.dropPieces)} ea", Modifier.weight(1f), valueColor = if (r.drops.isEmpty()) C.Ink else C.Red)
+        Tile(
+            "Appeared", if (r.rises.isEmpty()) "None" else "${Fmt.qty(r.risePieces)} ea", Modifier.weight(1f),
+            valueColor = if (r.rises.isEmpty() || r.delivery) C.Ink else C.Amber,
+        )
+    }
+    if (r.balanced) Banner("Every product balanced: last count − sold + buy backs + delivered matches the truck.", C.GreenSoft, C.GreenDark)
+    if (r.delivery) Banner(
+        "Lots of products went up at once, like freight that wasn't recorded as delivered. Increases here can't be told apart from new stock, and a drop only shows if it's bigger than what came in.",
+        C.AmberSoft, C.Amber,
+    )
+
+    if (r.drops.isNotEmpty()) Panel {
+        H2("Went missing")
+        if (r.dropValue > 0) Muted("${r.drops.size} product" + (if (r.drops.size == 1) "" else "s") + " · ${Fmt.money(r.dropValue)} at market rate", 14)
+        FindingRows(r.drops)
+    }
+    if (r.rises.isNotEmpty()) Panel {
+        H2("Appeared")
+        Muted(
+            "${r.rises.size} product" + (if (r.rises.size == 1) "" else "s") +
+                (if (r.riseValue > 0) " · ${Fmt.money(r.riseValue)} at market rate" else "") +
+                if (r.delivery) " · can't be checked on a delivery period" else "", 14,
+        )
+        FindingRows(r.rises)
+    }
+}
+
+@Composable
+private fun FindingRows(rows: List<InventoryCheck.Row>) {
+    val w = listOf(2.6f, 1f, 1f, 1f)
+    TableRow(listOf("Product", "Expected", "On truck", "Off by"), w, header = true, endAligned = setOf(1, 2, 3))
+    rows.forEach { f ->
+        HorizontalDivider(color = C.Divider)
+        TableRow(
+            listOf(
+                "${f.code} · ${f.name}", Fmt.qty(f.expected), Fmt.qty(f.actual),
+                (if (f.diff > 0) "+" else "") + Fmt.qty(f.diff),
+            ),
+            w, bold = setOf(3), endAligned = setOf(1, 2, 3), small = setOf(0),
+            color = C.Ink,
+        )
+        val parts = ArrayList<String>()
+        parts += "Last count ${Fmt.qty(f.prev)}"
+        parts += "sold ${Fmt.qty(f.sold)}"
+        if (f.buyback > 0) parts += "buy backs +${Fmt.qty(f.buyback)}"
+        if (f.delivered > 0) parts += "delivered +${Fmt.qty(f.delivered)}"
+        f.value?.let { parts += Fmt.money(it) }
+        if (f.credited > 0) parts += "also credited back ${Fmt.qty(f.credited)}"
+        Muted(parts.joinToString(" · "), 13)
     }
 }

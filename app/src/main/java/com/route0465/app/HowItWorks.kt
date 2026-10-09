@@ -85,7 +85,12 @@ val HOW_TOPICS: List<HowTopic> = listOf(
         listOf(
             "Cases on hand" to "From truck stock in the last import: units on hand ÷ case pack. The case pack is the largest unit multiplier XSales has for that product.",
             "Total cases" to "The sum of cases on hand across every product.",
-            "Inventory Check" to "Compares cases on hand at your last two imports, product by product. Change = latest − previous.",
+            "Inventory Check" to "Taco-Boys' check, in eaches, for each product between two imports: last count − sold + buy backs + delivered should equal what's on the truck now. Use the arrows to step back through earlier imports.",
+            "Credits in the check" to "Credit pickups are not subtracted: they never go back into sellable stock. Buy backs are added, because they go back on the truck and get resold. A product that was also credited back says so as context.",
+            "Delivered" to "XSales' reload for each product on the days in between.",
+            "Went missing and appeared" to "Product that left the truck with no sale, buy back or delivery behind it, and product that showed up with nothing to explain it. Both are findings, listed separately and never netted against each other. Value is the eaches off × market rate.",
+            "Delivery periods" to "If 6 or more products go up by 150+ eaches in total, it looks like freight that wasn't recorded as delivered. Then increases can't be told from restock, and only a drop bigger than what came in can show. That's said on the screen, never called clean.",
+            "Missing imports" to "If the route ran on a day with no import in between (weekdays learned from your own imports), the screen says so: the finding happened somewhere in that stretch, not on one particular day.",
         ),
     ),
     HowTopic(
