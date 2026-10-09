@@ -232,6 +232,11 @@ object XSales {
             val byCode = kept.associateBy { it.code }
             val lines = ArrayList<Ln>()
             var linesDropped = 0
+            // Same sources as Taco-Boys: sales are the units sold on invoices (its UNLOAD REPORT); credits and
+            // buy backs are the returned-product list (its TOTAL RETURNS), which XSales keeps in demandProductReturnUp,
+            // one row per product with its reason. A buy back is a return on a buy-back ticket (grt) or with the
+            // "Buy Back" reason; every other return is a credit pickup. The reason never changes pay.
+            val returnTable = hasTable(db, "demandProductReturnUp")
             if (hasTable(db, "invoiceProductUp")) rows(db, "SELECT * FROM invoiceProductUp").forEach { r ->
                 val doc = byCode[r.g("dmdCode")] ?: run { linesDropped++; return@forEach }
                 val pc = r.g("proCode") ?: ""
@@ -239,19 +244,32 @@ object XSales {
                 val q = r.num("iprQuantity")
                 val price = r.num("iprPrice")
                 val net = r.g("iprNetAmount")?.toDoubleOrNull() ?: (q * price)
-                // XSales can put a credit on a ticket typed as an invoice (e.g. a credit-only stop): the line itself
-                // is negative. Any negative line is a credit, whatever the ticket type.
+                if (returnTable) {
+                    // Returns come from the return list below; here only what was sold.
+                    if (!doc.isReturn && q > 0) lines += Ln(doc, pc, name, q, price, net, false)
+                    return@forEach
+                }
+                // Older backups without the return list: work the returns out from the invoice lines.
                 val lineRet = doc.isReturn || q < 0 || net < 0
                 if (q != 0.0) lines += Ln(doc, pc, name, abs(q), price, if (lineRet) -abs(net) else net, lineRet, doc.isBuyback)
-                // Returned product can sit in its own fields instead of the quantity, on a credit ticket too
-                // (XSales put a damaged credit at Jungle Jim's, 10/09, only in iprDamageReturnQuantity).
-                // Each counts as a credit line; on a credit ticket it's only used when the quantity is empty, so nothing counts twice.
                 for ((qtyField, amtField) in listOf("iprDamageReturnQuantity" to "iprDamageReturnAmount", "iprReturnQuantity" to "iprReturnAmount")) {
                     val rq = abs(r.num(qtyField))
                     if (rq <= 0.0 || (doc.isReturn && q != 0.0)) continue
                     val ra = r.g(amtField)?.toDoubleOrNull()?.takeIf { it != 0.0 } ?: (rq * price)
                     lines += Ln(doc, pc, name, rq, price, -abs(ra), true, doc.isBuyback)
                 }
+            }
+            if (returnTable) rows(db, "SELECT * FROM demandProductReturnUp").forEach { r ->
+                val doc = byCode[r.g("dmdCode")] ?: run { linesDropped++; return@forEach }
+                val pc = r.g("proCode") ?: ""
+                val name = prodNames[pc] ?: pc
+                val q = abs(r.g("dpnModifiedQuantity")?.toDoubleOrNull()?.takeIf { it != 0.0 } ?: r.num("dpnQuantity"))
+                if (q <= 0.0) return@forEach
+                val price = r.num("dpnPrice")
+                val net = r.g("dpnNetAmount")?.toDoubleOrNull()?.takeIf { it != 0.0 } ?: (q * price)
+                val reasonName = (r.g("reaCode")?.let { reasons[it] } ?: "")
+                val buyback = doc.isBuyback || reasonName.trim().equals("Buy Back", ignoreCase = true)
+                lines += Ln(doc, pc, name, q, price, -abs(net), true, buyback)
             }
 
             // Pay: the Taco-Boys commission math, per line, voided tickets excluded.
