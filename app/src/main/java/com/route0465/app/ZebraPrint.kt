@@ -182,11 +182,11 @@ object SheetLayout {
 
     private const val M = 16
 
-    fun build(lang: String, dots: Int, feed: Int, p: SheetPrint): String {
+    fun build(lang: String, dots: Int, feed: Int, p: SheetPrint, version: String): String {
         val total = p.lines.sumOf { it.qty }
         val sb = StringBuilder()
         val pages = mutableListOf<Page>()
-        pages += header(dots, p, total)
+        pages += header(dots, p, total, version)
         p.lines.forEach { pages += product(dots, it) }
         pages += footer(dots, p.lines.size, total, feed)
         pages.forEach { sb.append(if (lang == "zpl") it.zpl(dots) else it.cpcl(dots)) }
@@ -204,19 +204,20 @@ object SheetLayout {
         return pages.joinToString("") { if (lang == "zpl") it.zpl(dots) else it.cpcl(dots) }
     }
 
-    private fun header(dots: Int, p: SheetPrint, total: Int): Page {
-        val pg = Page(330)
+    private fun header(dots: Int, p: SheetPrint, total: Int, version: String): Page {
+        val pg = Page(384)
         val bigChars = (dots - 2 * M) / 24
         val smallChars = (dots - 2 * M) / 12
-        pg.text(M, 8, Size.Small, "CUSTOMER", center = true)
-        pg.text(M, 36, Size.Big, clean(p.storeName.ifBlank { "Store" }, bigChars), center = true)
-        if (p.storeCode.isNotBlank()) pg.text(M, 88, Size.Small, clean("Store # ${p.storeCode}", smallChars), center = true)
-        pg.text(M, 132, Size.Big, "OLE MEXICAN FOODS")
-        pg.text(M, 186, Size.Small, clean("Route ${p.route}", smallChars))
-        pg.text(M, 216, Size.Small, clean("Date ${p.date.format(Fmt.mdy)}", smallChars))
-        pg.text(M, 246, Size.Small, clean("${p.lines.size} product" + (if (p.lines.size == 1) "" else "s") + ", $total eaches", smallChars))
-        pg.text(M, 282, Size.Small, clean("Scan each barcode and enter the eaches shown.", smallChars))
-        pg.line(M, 324, dots - M, 3)
+        pg.text(M, 8, Size.Big, "OLE MEXICAN FOODS", center = true)
+        pg.text(M, 62, Size.Small, clean("Route ${p.route}", smallChars), center = true)
+        pg.text(M, 92, Size.Small, clean("Date ${p.date.format(Fmt.mdy)}", smallChars), center = true)
+        pg.text(M, 122, Size.Small, clean("465stats v$version", smallChars), center = true)
+        pg.text(M, 170, Size.Small, "CUSTOMER")
+        pg.text(M, 196, Size.Big, clean(p.storeName.ifBlank { "Store" }, bigChars))
+        if (p.storeCode.isNotBlank()) pg.text(M, 248, Size.Small, clean("Store # ${p.storeCode}", smallChars))
+        pg.text(M, 292, Size.Small, clean("${p.lines.size} product" + (if (p.lines.size == 1) "" else "s") + ", $total eaches", smallChars))
+        pg.text(M, 322, Size.Small, clean("Scan each barcode and enter the eaches shown.", smallChars))
+        pg.line(M, 370, dots - M, 3)
         return pg
     }
 

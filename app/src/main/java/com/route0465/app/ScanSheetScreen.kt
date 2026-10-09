@@ -129,7 +129,7 @@ fun ScanSheetScreen(v: Int, go: (Screen) -> Unit) {
             busy = true; msg = null
             scope.launch {
                 val r = withContext(Dispatchers.IO) {
-                    runCatching { Zebra.print(ctx) { lang, dots, feed -> SheetLayout.build(lang, dots, feed, sheet) } }
+                    runCatching { Zebra.print(ctx) { lang, dots, feed -> SheetLayout.build(lang, dots, feed, sheet, appVersion(ctx)) } }
                 }
                 busy = false
                 msg = r.fold(
