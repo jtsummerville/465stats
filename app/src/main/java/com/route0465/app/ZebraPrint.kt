@@ -205,16 +205,18 @@ object SheetLayout {
     }
 
     private fun header(dots: Int, p: SheetPrint, total: Int): Page {
-        val pg = Page(250)
+        val pg = Page(330)
         val bigChars = (dots - 2 * M) / 24
         val smallChars = (dots - 2 * M) / 12
-        pg.text(M, 8, Size.Big, clean(p.storeName.ifBlank { "Store" }, bigChars), center = true)
-        if (p.storeCode.isNotBlank()) pg.text(M, 62, Size.Small, clean("Store # ${p.storeCode}", smallChars), center = true)
-        pg.text(M, 104, Size.Small, clean("Route ${p.route}", smallChars))
-        pg.text(M, 134, Size.Small, clean("Date ${p.date.format(Fmt.mdy)}", smallChars))
-        pg.text(M, 164, Size.Small, clean("${p.lines.size} product" + (if (p.lines.size == 1) "" else "s") + ", $total eaches", smallChars))
-        pg.text(M, 200, Size.Small, clean("Scan each barcode and enter the eaches shown.", smallChars))
-        pg.line(M, 244, dots - M, 3)
+        pg.text(M, 8, Size.Small, "CUSTOMER", center = true)
+        pg.text(M, 36, Size.Big, clean(p.storeName.ifBlank { "Store" }, bigChars), center = true)
+        if (p.storeCode.isNotBlank()) pg.text(M, 88, Size.Small, clean("Store # ${p.storeCode}", smallChars), center = true)
+        pg.text(M, 132, Size.Big, "OLE MEXICAN FOODS")
+        pg.text(M, 186, Size.Small, clean("Route ${p.route}", smallChars))
+        pg.text(M, 216, Size.Small, clean("Date ${p.date.format(Fmt.mdy)}", smallChars))
+        pg.text(M, 246, Size.Small, clean("${p.lines.size} product" + (if (p.lines.size == 1) "" else "s") + ", $total eaches", smallChars))
+        pg.text(M, 282, Size.Small, clean("Scan each barcode and enter the eaches shown.", smallChars))
+        pg.line(M, 324, dots - M, 3)
         return pg
     }
 

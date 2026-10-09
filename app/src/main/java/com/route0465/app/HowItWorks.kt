@@ -137,7 +137,7 @@ val HOW_TOPICS: List<HowTopic> = listOf(
         "scansheet", "Scan sheet and printer", "What prints on the barcode sheet and how the printer is reached",
         listOf(
             "What it's for" to "For a store you can't DEX and where the product isn't on hand to scan. It's not an invoice: it's a strip of barcodes with the eaches you're delivering, for the receiver to scan and key in.",
-            "What prints" to "A header with the store name and number, route, date, number of products and total eaches. Then one block per product: code and description, its UPC-A barcode with the digits under it, and the eaches. Then a total.",
+            "What prints" to "A header with CUSTOMER over the store name and number, then OLE MEXICAN FOODS over the route, date, number of products and total eaches. Then one block per product: code and description, its UPC-A barcode with the digits under it, and the eaches. Then a total.",
             "Barcodes" to "Taken from the same built-in list as the UPC screen. A product with no UPC on file can't be added.",
             "Quantity" to "Always in eaches. The \"= 2 cases + 3\" note under a quantity uses the product's case pack and is only shown on the tablet, never printed.",
             "The sheet is kept" to "Store, date, route and products stay on the tablet until you change them or tap Clear all, so you can reprint any time.",
