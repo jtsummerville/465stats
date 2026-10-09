@@ -121,8 +121,8 @@ val HOW_TOPICS: List<HowTopic> = listOf(
     HowTopic(
         "paperwork", "End of Day paperwork", "Photos, the XSales PDF and the email",
         listOf(
-            "Store photos" to "Taken in the app per store and saved in the app's own storage, not your gallery.",
-            "Store paperwork PDF" to "One page per photo, stores in the order you first photographed them, each page labeled with the store, date and photo number. Photos are turned upright and shrunk to keep the PDF small.",
+            "Store pages" to "Scanned in the app per store with Google's document scanner: it finds the edges of the paper, crops and straightens it, and lets you rotate, re-crop or apply a clean-up filter before saving. Several pages per scan. Saved in the app's own storage, not your gallery. If the scanner isn't available, the regular camera is used instead."
+            "Store paperwork PDF" to "One page per scanned page, stores in the order you first scanned them, each page labeled with the store, date and page number. Pages are turned upright and shrunk to keep the PDF small.",
             "XSales End of Day PDF" to "Share it from XSales into 465stats. The first real PDF in the share is saved as today's; sharing again replaces it.",
             "Email" to "Opens your mail app addressed to the boss emails from Setup, with a subject, a short summary and both PDFs attached. You still tap Send in the mail app.",
             "How long they're kept" to "60 days, then the photos and PDFs for older days are deleted from the app.",

@@ -148,13 +148,13 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
     // ---------- end of day paperwork ----------
 
     fun photos(date: LocalDate): List<StorePhoto> = readableDatabase.list(
-        "SELECT * FROM store_photos WHERE date=? ORDER BY taken_at", arrayOf(date.toString())
+        "SELECT * FROM store_photos WHERE date=? ORDER BY taken_at, id", arrayOf(date.toString())
     ) { c -> StorePhoto(c.l("id"), c.s("date"), c.s("cus_code"), c.s("store"), c.s("path"), c.l("taken_at")) }
 
-    fun addPhoto(date: LocalDate, cusCode: String, store: String, path: String) {
+    fun addPhoto(date: LocalDate, cusCode: String, store: String, path: String, takenAt: Long = System.currentTimeMillis()) {
         writableDatabase.insert("store_photos", null, ContentValues().apply {
             put("date", date.toString()); put("cus_code", cusCode); put("store", store)
-            put("path", path); put("taken_at", System.currentTimeMillis())
+            put("path", path); put("taken_at", takenAt)
         })
     }
 

@@ -1,6 +1,8 @@
 package com.route0465.app
 
+import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -45,6 +47,9 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import java.io.File
 import java.time.LocalDate
 
@@ -96,6 +101,42 @@ fun PaperworkScreen(v: Int, bump: () -> Unit, shareMsg: MutableState<String?>) {
         }
     }
 
+    // Document scanner: edge detection, crop, straighten, rotate and clean-up filters, several pages per store.
+    val scanner = remember {
+        GmsDocumentScanning.getClient(
+            GmsDocumentScannerOptions.Builder()
+                .setGalleryImportAllowed(false)
+                .setPageLimit(20)
+                .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+                .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+                .build()
+        )
+    }
+    val scanLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        val cus = pendingCus
+        val store = pendingStore
+        if (result.resultCode == Activity.RESULT_OK) {
+            val pages = GmsDocumentScanningResult.fromActivityResultIntent(result.data)?.pages?.map { it.imageUri }.orEmpty()
+            scope.launch {
+                val n = withContext(Dispatchers.IO) { Paperwork.saveScannedPages(ctx, today, cus, store, pages) }
+                if (n == 0) message = "The scan didn't save any pages. Try again."
+                bump()
+            }
+        }
+    }
+    fun scan(cus: String, store: String) {
+        pendingCus = cus; pendingStore = store
+        val act = ctx as? Activity
+        if (act == null) { shoot(cus, store); return }
+        scanner.getStartScanIntent(act)
+            .addOnSuccessListener { sender -> scanLauncher.launch(IntentSenderRequest.Builder(sender).build()) }
+            .addOnFailureListener { e ->
+                // Scanner not available on this tablet (or still downloading): fall back to the plain camera.
+                message = "The scanner isn't available right now (${e.message ?: "unknown reason"}), so the regular camera opened instead."
+                shoot(cus, store)
+            }
+    }
+
     val pickPdf = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
             message = withContext(Dispatchers.IO) {
@@ -119,7 +160,7 @@ fun PaperworkScreen(v: Int, bump: () -> Unit, shareMsg: MutableState<String?>) {
             Panel(Modifier.part(1.4f)) {
                 H2("Store paperwork · ${day.format(Fmt.day)}")
                 Muted(
-                    if (isToday) "At each store, tap Take photo and shoot every page the store prints. Photos go into one PDF, in the order you take them."
+                    if (isToday) "At each store, tap Scan and hold the tablet over each page the store prints. The scanner crops and straightens every page, and you can rotate or clean it up before saving. Pages go into one PDF, in order."
                     else "Saved photos from ${day.format(Fmt.full)}. Tap one to open it.", 14,
                 )
                 if (!isToday && stores.isEmpty()) Muted("No store photos were taken this day.", 14)
@@ -130,9 +171,9 @@ fun PaperworkScreen(v: Int, bump: () -> Unit, shareMsg: MutableState<String?>) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(name, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                            Muted(if (mine.isEmpty()) "No photos" else "${mine.size} photo" + if (mine.size == 1) "" else "s", 13)
+                            Muted(if (mine.isEmpty()) "No pages" else "${mine.size} page" + if (mine.size == 1) "" else "s", 13)
                         }
-                        if (isToday) PrimaryButton("Take photo") { shoot(cus, name) }
+                        if (isToday) PrimaryButton(if (mine.isEmpty()) "Scan" else "Scan more") { scan(cus, name) }
                     }
                     if (mine.isNotEmpty()) {
                         Row(Modifier.horizontalScroll(rememberScrollState()).padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -143,9 +184,9 @@ fun PaperworkScreen(v: Int, bump: () -> Unit, shareMsg: MutableState<String?>) {
                 if (isToday) HorizontalDivider(color = C.Divider)
                 if (isToday) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(otherName, { otherName = it }, Modifier.weight(1f), label = { Text("Store not listed") }, singleLine = true)
-                    SecondaryButton("Take photo", enabled = otherName.isNotBlank()) {
+                    SecondaryButton("Scan", enabled = otherName.isNotBlank()) {
                         val n = otherName.trim()
-                        shoot("other:$n", n)
+                        scan("other:$n", n)
                         otherName = ""
                     }
                 }
@@ -178,7 +219,7 @@ fun PaperworkScreen(v: Int, bump: () -> Unit, shareMsg: MutableState<String?>) {
                     Muted(
                         "Attaching:\n" +
                             (if (eod != null) "• XSales End of Day PDF\n" else "• No End of Day PDF yet\n") +
-                            (if (photos.isNotEmpty()) "• Store paperwork: ${photos.size} photos from $storeCount stores, as one PDF" else "• No store photos yet"),
+                            (if (photos.isNotEmpty()) "• Store paperwork: ${photos.size} pages from $storeCount stores, as one PDF" else "• No store pages yet"),
                         14,
                     )
                     PrimaryButton(if (busy) "Building…" else if (isToday) "Send End of Day email" else "Resend ${day.format(Fmt.day)} email", Modifier.fillMaxWidth(), enabled = !busy && emails.isNotBlank() && (eod != null || photos.isNotEmpty())) {
@@ -218,7 +259,7 @@ fun PaperworkScreen(v: Int, bump: () -> Unit, shareMsg: MutableState<String?>) {
         AlertDialog(
             onDismissRequest = { picked = null },
             title = { Text(p.store) },
-            text = { Text("Photo taken ${java.text.SimpleDateFormat("h:mm a", java.util.Locale.US).format(java.util.Date(p.takenAt))}.") },
+            text = { Text("Scanned ${java.text.SimpleDateFormat("h:mm a", java.util.Locale.US).format(java.util.Date(p.takenAt))}.") },
             confirmButton = {
                 TextButton(onClick = {
                     runCatching { Paperwork.viewPhoto(ctx, File(p.path)) }.onFailure { message = "No app here can open photos." }
@@ -235,7 +276,7 @@ fun PaperworkScreen(v: Int, bump: () -> Unit, shareMsg: MutableState<String?>) {
     }
     confirmDelete?.let { p ->
         ConfirmDialog(
-            "Delete this photo?", "${p.store}. It's removed from today's paperwork.", "Delete",
+            "Delete this page?", "${p.store}. It's removed from today's paperwork.", "Delete",
             onConfirm = { repo.deletePhoto(p.id); File(p.path).delete(); bump() },
             onDismiss = { confirmDelete = null },
         )

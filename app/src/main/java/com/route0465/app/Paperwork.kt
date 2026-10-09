@@ -32,6 +32,22 @@ object Paperwork {
 
     fun newPhotoFile(ctx: Context, date: LocalDate): File = File(dayDir(ctx, date), "photo_${System.currentTimeMillis()}.jpg")
 
+    /** Copies the scanner's finished pages into today's paperwork, in order. Returns how many were saved. */
+    fun saveScannedPages(ctx: Context, date: LocalDate, cusCode: String, store: String, pages: List<Uri>): Int {
+        var n = 0
+        val start = System.currentTimeMillis()
+        pages.forEachIndexed { i, uri ->
+            val f = File(dayDir(ctx, date), "scan_${start}_${i + 1}.jpg")
+            val ok = runCatching {
+                ctx.contentResolver.openInputStream(uri)?.use { input -> f.outputStream().use { input.copyTo(it) } } != null
+            }.getOrDefault(false)
+            if (ok && f.length() > 0) {
+                Db.get(ctx).addPhoto(date, cusCode, store, f.path, start + i); n++
+            } else f.delete()
+        }
+        return n
+    }
+
     fun uriFor(ctx: Context, f: File): Uri = FileProvider.getUriForFile(ctx, AUTHORITY, f)
 
     /** URIs carried by a share (single or multiple), however the sending app packed them. */
@@ -114,11 +130,11 @@ object Paperwork {
         var pageNo = 0
         for ((_, list) in groups) {
             list.forEachIndexed { i, p ->
-                val bmp = loadScaled(p.path, 1600) ?: return@forEachIndexed
+                val bmp = loadScaled(p.path, 2000) ?: return@forEachIndexed
                 pageNo++
                 val page = doc.startPage(PdfDocument.PageInfo.Builder(612, 792, pageNo).create())
                 val c = page.canvas
-                c.drawText("Route 0465 · ${p.store} · ${date.format(Fmt.full)} · photo ${i + 1} of ${list.size}", 36f, 28f, head)
+                c.drawText("Route 0465 · ${p.store} · ${date.format(Fmt.full)} · page ${i + 1} of ${list.size}", 36f, 28f, head)
                 val maxW = 540f
                 val maxH = 734f
                 val s = min(maxW / bmp.width, maxH / bmp.height)
