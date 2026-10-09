@@ -37,6 +37,14 @@ object Periods {
         return ANCHOR.plusDays(idx * 14)
     }
 
+    /** Days after a period's last Friday that it can still change; it locks the day after (Taco-Boys LOCK_LAG_DAYS). */
+    const val LOCK_LAG_DAYS = 5L
+
+    /** First day the period holding [d] is locked: its pay is final and is never refigured. */
+    fun lockDate(d: LocalDate): LocalDate = startOf(d).plusDays(13 + LOCK_LAG_DAYS + 1)
+
+    fun isLocked(d: LocalDate, today: LocalDate = LocalDate.now()): Boolean = !today.isBefore(lockDate(d))
+
     /** Saturday that starts the Sat–Fri week holding [d]. */
     fun weekStart(d: LocalDate): LocalDate {
         val back = (d.dayOfWeek.value - DayOfWeek.SATURDAY.value + 7) % 7

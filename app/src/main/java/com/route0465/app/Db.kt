@@ -303,8 +303,8 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
     // ---------- rates ----------
 
     /**
-     * Figures pay again for every imported day from its saved lines and the rates on file now.
-     * Same math as an import. Runs after a rates upload so earlier days pick up new or fixed rates.
+     * Figures pay again for imported days in pay periods that aren't locked yet, from their saved lines and
+     * the rates in effect on each day's own date. Same math as an import. Locked periods are never touched.
      * Returns how many days' pay changed.
      */
     fun recomputePay(): Int {
@@ -314,6 +314,9 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
         try {
             val days = w.list("SELECT date, pay FROM days") { it.getString(0) to it.getDouble(1) }
             for ((date, oldPay) in days) {
+                // Locked periods are already paid: their pay is a record and never changes.
+                val day = runCatching { LocalDate.parse(date) }.getOrNull() ?: continue
+                if (Periods.isLocked(day)) continue
                 val voided = w.list("SELECT dmd_code FROM docs WHERE date=? AND voided=1", arrayOf(date)) { it.getString(0) ?: "" }.toSet()
                 val lines = w.list("SELECT rowid, dmd_code, code, qty, is_return FROM lines WHERE date=?", arrayOf(date)) {
                     listOf(it.getLong(0), it.getString(1) ?: "", it.getString(2) ?: "", it.getDouble(3), it.getInt(4) == 1)

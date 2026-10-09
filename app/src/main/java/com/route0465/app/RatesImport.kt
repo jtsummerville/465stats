@@ -105,7 +105,7 @@ object RatesImport {
         // New rates apply to days already imported too.
         if (market + comm > 0) {
             val changed = Db.get(ctx).recomputePay()
-            notes += "Pay refigured for imported days: $changed day" + (if (changed == 1) "" else "s") + " changed."
+            notes += "Pay refigured for days in open pay periods: $changed day" + (if (changed == 1) "" else "s") + " changed. Locked (already paid) periods were left alone."
         }
         return Result(market, comm, skipped, notes)
     }

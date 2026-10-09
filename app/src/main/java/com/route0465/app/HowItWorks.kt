@@ -54,7 +54,8 @@ val HOW_TOPICS: List<HowTopic> = listOf(
             "Damaged goods" to "Damage-return quantities on a sales ticket are counted as credit lines.",
             "Missing rates" to "A product with no market rate or commission % on file counts $0 and is listed as missing on that day so you can fix the rate sheet.",
             "Voids" to "Voided tickets pay nothing.",
-            "Pay periods" to "14 days: two Saturday–Friday weeks, counted from Sat 07/11/2026. The pay is figured when the day is imported, and figured again for every imported day whenever you upload rates, so new or corrected rates reach past days too.",
+            "Pay periods" to "14 days: two Saturday–Friday weeks, counted from Sat 07/11/2026. The pay is figured when the day is imported, using the rates in effect on that day's own date.",
+            "Locked pay" to "A pay period locks 5 days after it ends (the Thursday after its last Friday). Until then, uploading rates refigures its days, so a missing or wrong rate can still be fixed. Once locked, its pay is final and nothing changes it, not even a back-dated rate.",
         ),
     ),
     HowTopic(
