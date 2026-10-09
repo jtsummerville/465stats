@@ -58,6 +58,7 @@ private enum class SetupSection(val title: String) {
     Imports("Imports and activity log"),
     Printer("Printer"),
     HowItWorks("Reference"),
+    About("About"),
 }
 
 /** Lets another screen open Setup straight to a section (e.g. Scan sheet › Setup › Printer). */
@@ -82,6 +83,7 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
         SetupSection.Imports -> ImportsSection(v, bump, back)
         SetupSection.Printer -> PrinterSection(back)
         SetupSection.HowItWorks -> HowItWorksSection(back)
+        SetupSection.About -> AboutSection(back)
     }
 }
 
@@ -105,6 +107,7 @@ private fun SetupMenu(v: Int, open: (SetupSection) -> Unit) {
             SetupSection.Imports to (last?.let { "Last import ${it.date.format(Fmt.day)}" } ?: "No imports yet"),
             SetupSection.Printer to (PrinterPrefs.name(ctx).ifBlank { "None chosen yet" } + " · " +
                 PrinterPrefs.langLabel(PrinterPrefs.language(ctx)) + " · " + PrinterPrefs.widthLabel(PrinterPrefs.widthDots(ctx)) + " paper"),
+            SetupSection.About to "Version ${appVersion(ctx)} · © 2026",
             SetupSection.HowItWorks to "How every number is figured: pay, sales, Suggested, promos and the rest",
         )
     }
@@ -125,7 +128,6 @@ private fun SetupMenu(v: Int, open: (SetupSection) -> Unit) {
                 }
             }
         }
-        Text("© 2026 465stats  ·  version ${appVersion(ctx)}", fontSize = 13.sp, color = C.Muted, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
@@ -926,4 +928,28 @@ private fun PrinterSection(back: () -> Unit) {
         }
     }
     if (choosing) PrinterChooserDialog({ d -> addr = d.address; name = d.name; choosing = false }) { choosing = false }
+}
+
+// ---------------------------------------------------------------- about
+
+@Composable
+private fun AboutSection(back: () -> Unit) {
+    val ctx = LocalContext.current
+    val ver = remember { appVersion(ctx) }
+    val installed = remember {
+        runCatching {
+            val t = ctx.packageManager.getPackageInfo(ctx.packageName, 0).lastUpdateTime
+            java.time.Instant.ofEpochMilli(t).atZone(java.time.ZoneId.systemDefault()).toLocalDate().format(Fmt.full)
+        }.getOrDefault("")
+    }
+    ScreenColumn {
+        SectionTop("About", back)
+        Panel {
+            ReadRow("App", "465stats")
+            ReadRow("Version", ver)
+            ReadRow("Build", ver.substringAfterLast('.'))
+            ReadRow("Installed on this tablet", installed)
+            ReadRow("Copyright", "© 2026 465stats")
+        }
+    }
 }
