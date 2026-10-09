@@ -105,6 +105,24 @@ fun ScanSheetScreen(v: Int, go: (Screen) -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var msg by remember { mutableStateOf<Pair<String, Boolean>?>(null) } // text, ok
     var printerName by remember(v) { mutableStateOf(PrinterPrefs.name(ctx)) }
+    var fromXSales by remember { mutableStateOf(false) }
+    var pendingInvoice by remember { mutableStateOf<XSales.LiveInvoice?>(null) }
+
+    /** Fills the sheet from a finalized XSales invoice: its store, today, and every product with its eaches. */
+    fun fillFrom(inv: XSales.LiveInvoice) {
+        val lower = upcs.associateBy { it.code.lowercase() }
+        val noBarcode = ArrayList<String>()
+        items.clear()
+        inv.lines.groupBy { it.first.lowercase() }.forEach { (code, l) ->
+            val qty = l.sumOf { it.second }
+            val p = lower[code]
+            if (p == null || p.upc.isEmpty()) noBarcode += (p?.code ?: l.first().first) else items.add(SheetItem(p, qty.toString()))
+        }
+        storeCode = inv.cusCode; storeName = inv.store; date = LocalDate.now().format(Fmt.mdy)
+        persist()
+        msg = (if (noBarcode.isEmpty()) "Filled from invoice ${inv.code}. Check it over, then print." to true
+            else "Filled from invoice ${inv.code}. No barcode on file for ${noBarcode.joinToString(", ")}, so ${if (noBarcode.size == 1) "it was" else "they were"} left off." to false)
+    }
 
     val gate = rememberBluetoothGate { msg = "465stats needs the Nearby devices permission to talk to the printer. Allow it and try again." to false }
 
@@ -143,7 +161,11 @@ fun ScanSheetScreen(v: Int, go: (Screen) -> Unit) {
 
     ScreenColumn {
         Panel {
-            H2("Delivery")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                H2("Delivery")
+                Spacer1()
+                SecondaryButton("From XSales") { fromXSales = true }
+            }
             PickField("Store", if (storeName.isBlank()) "" else storeName + if (storeCode.isNotBlank()) "  ·  #$storeCode" else "") { pickStore = true }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 CalendarField("Date", date, LocalDate.now(), Modifier.weight(1f)) { date = it; persist() }
@@ -210,6 +232,16 @@ fun ScanSheetScreen(v: Int, go: (Screen) -> Unit) {
     }
     if (clearing) ConfirmDialog("Clear the sheet?", "Removes every product from this sheet. The store, date and route stay.", "Clear all",
         { items.clear(); persist(); msg = null }) { clearing = false }
+    if (fromXSales) XSalesInvoiceDialog({ inv ->
+        fromXSales = false
+        if (items.isEmpty()) fillFrom(inv) else pendingInvoice = inv
+    }) { fromXSales = false }
+    pendingInvoice?.let { inv ->
+        ConfirmDialog(
+            "Replace this sheet?", "The products on the sheet now are removed and replaced with invoice ${inv.code} for ${inv.store}.", "Replace",
+            { fillFrom(inv) },
+        ) { pendingInvoice = null }
+    }
     if (choosePrinter) PrinterChooserDialog({ d -> PrinterPrefs.setPrinter(ctx, d.address, d.name); printerName = d.name; choosePrinter = false; msg = null }) { choosePrinter = false }
 }
 
@@ -300,6 +332,48 @@ fun PrinterChooserDialog(onPick: (Zebra.Paired) -> Unit, onDismiss: () -> Unit) 
                     "Open Bluetooth settings to pair or re-pair ›", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 15.sp,
                     modifier = Modifier.clickable { openBluetoothSettings(ctx) }.background(C.GreenSoft).padding(12.dp).fillMaxWidth(),
                 )
+            }
+        },
+    )
+}
+
+/** Today's finalized invoices from XSales, newest first. Reading happens only when this opens. */
+@Composable
+private fun XSalesInvoiceDialog(onPick: (XSales.LiveInvoice) -> Unit, onDismiss: () -> Unit) {
+    val ctx = LocalContext.current
+    var tick by remember { mutableStateOf(0) }
+    var loading by remember { mutableStateOf(true) }
+    var result by remember { mutableStateOf<Pair<List<XSales.LiveInvoice>, String?>>(emptyList<XSales.LiveInvoice>() to null) }
+    androidx.compose.runtime.LaunchedEffect(tick) {
+        loading = true
+        result = withContext(Dispatchers.IO) {
+            runCatching { XSales.liveInvoices(ctx) }.getOrElse { emptyList<XSales.LiveInvoice>() to "Couldn't read XSales: ${it.message}" }
+        }
+        loading = false
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        dismissButton = { TextButton(onClick = { tick++ }, enabled = !loading) { Text("Refresh") } },
+        title = { Text("Today's XSales invoices") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (loading) Muted("Reading XSales…")
+                else {
+                    result.second?.let { Muted(it, 14) }
+                    LazyColumn(Modifier.heightIn(max = 440.dp)) {
+                        items(result.first, key = { it.code }) { inv ->
+                            Column(Modifier.fillMaxWidth().clickable { onPick(inv) }.padding(vertical = 11.dp)) {
+                                Text(inv.store, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    listOf(inv.time, "#${inv.code}", "${inv.lines.size} products", "${inv.lines.sumOf { it.second }} eaches")
+                                        .filter { it.isNotBlank() }.joinToString("  ·  "),
+                                    fontSize = 13.sp, color = C.Muted,
+                                )
+                            }
+                        }
+                    }
+                }
             }
         },
     )

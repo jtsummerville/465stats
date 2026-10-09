@@ -83,6 +83,77 @@ object XSales {
         return candidates().firstOrNull()
     }
 
+    /** A finalized invoice from XSales' live file, for filling a scan sheet before End of Day. */
+    data class LiveInvoice(val code: String, val cusCode: String, val store: String, val time: String, val lines: List<Pair<String, Int>>)
+
+    /**
+     * Today's finalized invoices, read from XSales' live working file (Main.sqlite) without touching it:
+     * the file and its -journal / -wal / -shm companions are copied to the app's cache, and the copy is opened
+     * (so SQLite settles any half-written change on the copy, leaving the last finished state). Only tickets
+     * dated today are listed. Returns the invoices, or a message saying what was found instead.
+     */
+    fun liveInvoices(ctx: Context): Pair<List<LiveInvoice>, String?> {
+        if (!hasAccess(ctx)) return emptyList<LiveInvoice>() to "File access isn't allowed yet. Tap \"Allow file access\" on Home."
+        val dir = folder(ctx) ?: return emptyList<LiveInvoice>() to "Couldn't find the XSales folder. Set it in Setup › XSales folder."
+        val files = dir.listFiles()?.toList().orEmpty()
+        val main = files.firstOrNull { it.isFile && (it.name.equals("Main.sqlite", true) || it.name.equals(".Main.sqlite", true)) }
+            ?: return emptyList<LiveInvoice>() to ("465stats can't see XSales' live file (Main.sqlite) in ${dir.path}. It sees: " +
+                files.sortedBy { it.name.lowercase() }.joinToString(", ") { "${it.name} (${it.length() / 1024} KB)" }.ifEmpty { "nothing" } + ".")
+        if (!main.canRead()) return emptyList<LiveInvoice>() to "Main.sqlite is there but Android won't let 465stats read it."
+        val today = LocalDate.now()
+        val work = File(ctx.cacheDir, "xsales_live").apply { deleteRecursively(); mkdirs() }
+        val copy = File(work, "Main.sqlite")
+        try {
+            main.inputStream().use { i -> copy.outputStream().use { o -> i.copyTo(o) } }
+            for (suffix in listOf("-journal", "-wal", "-shm")) {
+                val side = File(main.path + suffix)
+                if (side.isFile) side.inputStream().use { i -> File(copy.path + suffix).outputStream().use { o -> i.copyTo(o) } }
+            }
+        } catch (e: Exception) {
+            return emptyList<LiveInvoice>() to "Couldn't copy Main.sqlite: ${e.message}"
+        }
+        val db = try {
+            SQLiteDatabase.openDatabase(copy.path, null, SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.NO_LOCALIZED_COLLATORS)
+        } catch (e: Exception) {
+            return emptyList<LiveInvoice>() to "Couldn't open the copy of Main.sqlite: ${e.message}"
+        }
+        db.use {
+            if (!hasTable(db, "demandUp")) return emptyList<LiveInvoice>() to "Main.sqlite has no tickets table yet."
+            val names = HashMap<String, String>()
+            if (hasTable(db, "customer")) rows(db, "SELECT * FROM customer").forEach { r ->
+                val c = r.g("cusCode") ?: return@forEach
+                names[c] = r.g("cusName")?.takeIf { it.isNotEmpty() } ?: c
+            }
+            val sold = HashMap<String, MutableList<Pair<String, Int>>>()
+            if (hasTable(db, "invoiceProductUp")) rows(db, "SELECT * FROM invoiceProductUp").forEach { r ->
+                val d = r.g("dmdCode") ?: return@forEach
+                val q = r.num("iprQuantity")
+                if (q > 0) sold.getOrPut(d) { ArrayList() } += (r.g("proCode") ?: "") to q.toInt()
+            }
+            val ordered = HashMap<String, MutableList<Pair<String, Int>>>()
+            if (hasTable(db, "demandProductUp")) rows(db, "SELECT * FROM demandProductUp").forEach { r ->
+                val d = r.g("dmdCode") ?: return@forEach
+                val q = r.num("dptQuantity")
+                if (q > 0) ordered.getOrPut(d) { ArrayList() } += (r.g("proCode") ?: "") to q.toInt()
+            }
+            val out = ArrayList<LiveInvoice>()
+            rows(db, "SELECT * FROM demandUp").forEach { r ->
+                val stamp = r.g("dmdInvoiceDate") ?: r.g("dmdStartTime")
+                if (parseLooseDate(stamp) != today) return@forEach
+                if (!(r.g("docCode") ?: "").lowercase().startsWith("inv")) return@forEach
+                val cancel = r.g("dmdCancelInvoice") ?: "0"
+                if (cancel == "1" || cancel.equals("true", ignoreCase = true)) return@forEach
+                val code = r.g("dmdCode") ?: return@forEach
+                val lines = sold[code] ?: ordered[code] ?: return@forEach
+                val cus = r.g("cusCode") ?: ""
+                val time = stamp?.substringAfter(' ', "")?.take(5) ?: ""
+                out += LiveInvoice(code, cus, names[cus] ?: cus, time, lines)
+            }
+            if (out.isEmpty()) return emptyList<LiveInvoice>() to "No finalized invoices for today in XSales yet."
+            return out.sortedByDescending { it.time } to null
+        }
+    }
+
     private fun snapshot(ctx: Context, src: File): File {
         val dir = File(ctx.cacheDir, "xsales").apply { mkdirs() }
         val dst = File(dir, src.name)
