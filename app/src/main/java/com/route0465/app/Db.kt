@@ -302,6 +302,49 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
 
     // ---------- rates ----------
 
+    /**
+     * Figures pay again for every imported day from its saved lines and the rates on file now.
+     * Same math as an import. Runs after a rates upload so earlier days pick up new or fixed rates.
+     * Returns how many days' pay changed.
+     */
+    fun recomputePay(): Int {
+        val w = writableDatabase
+        var changed = 0
+        w.beginTransaction()
+        try {
+            val days = w.list("SELECT date, pay FROM days") { it.getString(0) to it.getDouble(1) }
+            for ((date, oldPay) in days) {
+                val voided = w.list("SELECT dmd_code FROM docs WHERE date=? AND voided=1", arrayOf(date)) { it.getString(0) ?: "" }.toSet()
+                val lines = w.list("SELECT rowid, dmd_code, code, qty, is_return FROM lines WHERE date=?", arrayOf(date)) {
+                    listOf(it.getLong(0), it.getString(1) ?: "", it.getString(2) ?: "", it.getDouble(3), it.getInt(4) == 1)
+                }
+                val missing = sortedSetOf<String>()
+                var total = 0.0
+                for (l in lines) {
+                    val rowid = l[0] as Long; val doc = l[1] as String; val code = l[2] as String
+                    val qty = l[3] as Double; val isReturn = l[4] as Boolean
+                    val pay = if (doc in voided) 0.0 else {
+                        val rate = rateFor(code, date)
+                        if (rate == null || rate.marketRate == 0.0 || rate.commissionPct == 0.0) { missing += code; 0.0 }
+                        else {
+                            val commission = qty * rate.marketRate * rate.commissionPct
+                            if (isReturn) -(commission + qty * rate.marketRate * (1 - rate.creditPct)) else commission
+                        }
+                    }
+                    total += pay
+                    w.execSQL("UPDATE lines SET pay=? WHERE rowid=?", arrayOf<Any>(pay, rowid))
+                }
+                w.execSQL("UPDATE days SET pay=?, missing_rates=? WHERE date=?", arrayOf<Any>(total, missing.joinToString(", "), date))
+                if (kotlin.math.abs(total - oldPay) > 0.005) changed++
+            }
+            w.setTransactionSuccessful()
+        } finally {
+            w.endTransaction()
+        }
+        return changed
+    }
+
+
     fun rateFor(code: String, date: String): Rate? {
         val db = readableDatabase
         val mr = db.list(

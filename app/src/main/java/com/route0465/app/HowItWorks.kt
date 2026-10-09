@@ -54,7 +54,7 @@ val HOW_TOPICS: List<HowTopic> = listOf(
             "Damaged goods" to "Damage-return quantities on a sales ticket are counted as credit lines.",
             "Missing rates" to "A product with no market rate or commission % on file counts $0 and is listed as missing on that day so you can fix the rate sheet.",
             "Voids" to "Voided tickets pay nothing.",
-            "Pay periods" to "14 days: two Saturday–Friday weeks, counted from Sat 07/11/2026. The pay is figured when the day is imported, using the rates on file then.",
+            "Pay periods" to "14 days: two Saturday–Friday weeks, counted from Sat 07/11/2026. The pay is figured when the day is imported, and figured again for every imported day whenever you upload rates, so new or corrected rates reach past days too.",
         ),
     ),
     HowTopic(

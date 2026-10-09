@@ -102,6 +102,11 @@ object RatesImport {
         } finally {
             w.endTransaction()
         }
+        // New rates apply to days already imported too.
+        if (market + comm > 0) {
+            val changed = Db.get(ctx).recomputePay()
+            notes += "Pay refigured for imported days: $changed day" + (if (changed == 1) "" else "s") + " changed."
+        }
         return Result(market, comm, skipped, notes)
     }
 

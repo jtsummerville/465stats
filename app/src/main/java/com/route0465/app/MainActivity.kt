@@ -114,7 +114,15 @@ class MainActivity : ComponentActivity() {
             val r = try { AutoImport.check(ctx) } catch (_: Exception) { null }
             try { DataBackup.auto(ctx) } catch (_: Exception) { }
             try { Paperwork.prune(ctx) } catch (_: Exception) { }
-            if (r != null) runOnUiThread { version.value = version.value + 1 }
+            // One time after this update: refigure pay on days imported before their rates were uploaded.
+            try {
+                val sp = ctx.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+                if (!sp.getBoolean("pay_refigured_v1", false)) {
+                    Db.get(ctx).recomputePay()
+                    sp.edit().putBoolean("pay_refigured_v1", true).apply()
+                }
+            } catch (_: Exception) { }
+            runOnUiThread { version.value = version.value + 1 }
         }.start()
     }
 }
