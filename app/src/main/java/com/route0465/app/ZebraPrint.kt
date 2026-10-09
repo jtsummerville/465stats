@@ -116,12 +116,12 @@ object Zebra {
     }
 
     /** Asks the printer which language it's set to. Returns "zpl", "cpcl" or "" when it doesn't say. */
-    private fun ask(s: BluetoothSocket): String {
+    private fun ask(s: BluetoothSocket, waitMs: Long = 2500L): String {
         val out = s.outputStream
         val inp = s.inputStream
         out.write("! U1 getvar \"device.languages\"\r\n".toByteArray(Charsets.US_ASCII)); out.flush()
         val sb = StringBuilder()
-        val end = System.currentTimeMillis() + 2500
+        val end = System.currentTimeMillis() + waitMs
         var quietSince = 0L
         while (System.currentTimeMillis() < end) {
             val n = runCatching { inp.available() }.getOrDefault(0)
@@ -155,13 +155,17 @@ object Zebra {
             }
             val bytes = build(lang, dots, PrinterPrefs.feedDots(ctx)).toByteArray(Charsets.US_ASCII)
             val out = s.outputStream
+            // Small paced chunks: the RW420's Bluetooth buffer is small and drops data if flooded.
             var i = 0
             while (i < bytes.size) {
-                val n = minOf(1024, bytes.size - i)
+                val n = minOf(512, bytes.size - i)
                 out.write(bytes, i, n); out.flush(); i += n
+                Thread.sleep(15)
             }
-            // Mobile Zebras drop the tail of a job if the link closes too soon.
-            Thread.sleep(maxOf(1200L, bytes.size / 15L))
+            // Android hands the data off before the printer has it. Closing now cuts off the end of the sheet,
+            // so ask the printer a question: it answers only after it has read everything before it.
+            val answered = ask(s, 45_000L).isNotEmpty()
+            Thread.sleep(if (answered) 800L else maxOf(3000L, bytes.size / 4L))
             return lang
         } finally {
             runCatching { s.close() }
@@ -178,25 +182,25 @@ object SheetLayout {
 
     private const val M = 16
 
-    fun build(lang: String, dots: Int, feed: Int, p: SheetPrint): String {
+    fun build(lang: String, dots: Int, feed: Int, p: SheetPrint, version: String): String {
         val total = p.lines.sumOf { it.qty }
         val sb = StringBuilder()
         val pages = mutableListOf<Page>()
         pages += header(dots, p, total)
         p.lines.forEach { pages += product(dots, it) }
-        pages += footer(dots, p.lines.size, total, feed)
+        pages += footer(dots, p.lines.size, total, feed, version)
         pages.forEach { sb.append(if (lang == "zpl") it.zpl(dots) else it.cpcl(dots)) }
         return sb.toString()
     }
 
-    fun test(lang: String, dots: Int, feed: Int, sample: UpcItem?): String {
+    fun test(lang: String, dots: Int, feed: Int, sample: UpcItem?, version: String): String {
         val pages = mutableListOf<Page>()
         val pg = Page(110)
         pg.text(M, 10, Size.Big, "465stats test print", center = true)
         pg.text(M, 66, Size.Small, clean("Language ${lang.uppercase()} - paper ${PrinterPrefs.widthLabel(dots)}", 60), center = true)
         pages += pg
         if (sample != null) pages += product(dots, SheetLine(sample.code, sample.desc, sample.upc, sample.casePack, 12))
-        pages += Page(60 + feed).also { it.text(M, 10, Size.Small, "If the barcode above scans, you're set.", center = true) }
+        pages += Page(100 + feed).also { it.text(M, 10, Size.Small, "If the barcode above scans, you're set.", center = true); copyright(it, 50, version) }
         return pages.joinToString("") { if (lang == "zpl") it.zpl(dots) else it.cpcl(dots) }
     }
 
@@ -239,12 +243,18 @@ object SheetLayout {
         return pg
     }
 
-    private fun footer(dots: Int, n: Int, total: Int, feed: Int): Page {
-        // The blank space under the total is what pushes the paper out past the tear bar.
-        val pg = Page(100 + feed)
+    private fun footer(dots: Int, n: Int, total: Int, feed: Int, version: String): Page {
+        // The blank space under the copyright line is what pushes the paper out past the tear bar.
+        val pg = Page(150 + feed)
         pg.text(M, 14, Size.Big, "TOTAL  $total EACHES")
         pg.text(M, 66, Size.Small, "$n product" + if (n == 1) "" else "s")
+        copyright(pg, 108, version)
         return pg
+    }
+
+    private fun copyright(pg: Page, y: Int, version: String) {
+        pg.copyMark(M, y)
+        pg.text(M + 32, y, Size.Small, clean("2026 465stats - version $version", 60))
     }
 
     enum class Size { Small, Big, Huge }
@@ -255,6 +265,8 @@ object SheetLayout {
         /** A solid black bar, drawn exactly so barcodes come out the same width on every printer. */
         private class B(val x: Int, val y: Int, val w: Int, val h: Int) : Op()
         private class L(val x0: Int, val y: Int, val x1: Int, val w: Int) : Op()
+        /** A small black-and-white picture: rows of bytes, leftmost dot in the high bit. */
+        private class G(val x: Int, val y: Int, val wBytes: Int, val h: Int, val hex: String) : Op()
         private val ops = mutableListOf<Op>()
 
         fun text(x: Int, y: Int, size: Size, s: String, center: Boolean = false) { ops += T(x, y, size, s, center) }
@@ -276,6 +288,25 @@ object SheetLayout {
         }
         fun line(x0: Int, y: Int, x1: Int, w: Int) { ops += L(x0, y, x1, w) }
 
+        /** The (C) copyright mark, drawn as a 24-dot picture so it prints the same on any printer font. */
+        fun copyMark(x: Int, y: Int) {
+            val n = 24
+            val sb = StringBuilder()
+            for (row in 0 until n) {
+                var bits = 0
+                for (col in 0 until n) {
+                    val dx = col + 0.5 - n / 2.0
+                    val dy = row + 0.5 - n / 2.0
+                    val r = Math.hypot(dx, dy)
+                    val ring = r in 9.6..11.9
+                    val c = r in 4.0..6.3 && !(dx > 1.5 && kotlin.math.abs(dy) < 3.5)
+                    bits = (bits shl 1) or (if (ring || c) 1 else 0)
+                }
+                sb.append(String.format("%06X", bits))
+            }
+            ops += G(x, y, n / 8, n, sb.toString())
+        }
+
         fun cpcl(dots: Int): String {
             // JOURNAL = continuous receipt roll: no hunting for label gaps, no backing up over what already printed.
             val sb = StringBuilder("! 0 200 200 $h 1\r\nPAGE-WIDTH $dots\r\nJOURNAL\r\n")
@@ -289,6 +320,7 @@ object SheetLayout {
                 // One-dot-wide vertical lines side by side: no guessing which way a thick line grows.
                 is B -> for (dx in 0 until o.w) sb.append("LINE ${o.x + dx} ${o.y} ${o.x + dx} ${o.y + o.h} 1\r\n")
                 is L -> sb.append("LINE ${o.x0} ${o.y} ${o.x1} ${o.y} ${o.w}\r\n")
+                is G -> sb.append("EG ${o.wBytes} ${o.h} ${o.x} ${o.y} ${o.hex}\r\n")
             }
             sb.append("PRINT\r\n")
             return sb.toString()
@@ -305,9 +337,14 @@ object SheetLayout {
                 }
                 is B -> sb.append("^FO${o.x},${o.y}^GB${o.w},${o.h},${o.w}^FS\n")
                 is L -> sb.append("^FO${o.x0},${o.y}^GB${o.x1 - o.x0},${o.w},${o.w}^FS\n")
+                is G -> { val t = o.wBytes * o.h; sb.append("^FO${o.x},${o.y}^GFA,$t,$t,${o.wBytes},${o.hex}^FS\n") }
             }
             sb.append("^XZ\n")
             return sb.toString()
         }
     }
 }
+
+/** The installed version, e.g. 0.1.36 (the last number is the build). */
+fun appVersion(ctx: Context): String =
+    runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?"

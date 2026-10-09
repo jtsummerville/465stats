@@ -913,7 +913,7 @@ private fun PrinterSection(back: () -> Unit) {
                         busy = true; msg = null
                         scope.launch {
                             val sample = runCatching { Upc.all(ctx).firstOrNull { it.upc.isNotEmpty() } }.getOrNull()
-                            val r = withContext(Dispatchers.IO) { runCatching { Zebra.print(ctx) { l, d, f -> SheetLayout.test(l, d, f, sample) } } }
+                            val r = withContext(Dispatchers.IO) { runCatching { Zebra.print(ctx) { l, d, f -> SheetLayout.test(l, d, f, sample, appVersion(ctx)) } } }
                             busy = false; shown++
                             msg = r.fold({ "Test sent using ${it.uppercase()}." to true }, { (it.message ?: "Printing failed.") to false })
                         }
