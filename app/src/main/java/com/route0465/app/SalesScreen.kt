@@ -57,8 +57,8 @@ enum class SalesRange(val label: String, val unit: String) {
     Today("Day", "day"), Week("Week", "week"), TwoWeeks("2 weeks", "2 weeks"), FourWeeks("4 weeks", "4 weeks"), Month("Month", "month"), Year("Year", "year");
 
     /** [from, to] for this window, [back] periods ago; the current period ends today. */
-    fun window(today: LocalDate, back: Int): Pair<LocalDate, LocalDate> {
-        val ws = Periods.weekStart(today)
+    fun window(today: LocalDate, back: Int, freight: Boolean = false): Pair<LocalDate, LocalDate> {
+        val ws = if (freight && this == Week) Periods.freightWeekStart(today) else Periods.weekStart(today)
         val (from, to) = when (this) {
             Today -> today.minusDays(back.toLong()).let { it to it }
             Week -> ws.minusDays(7L * back).let { it to it.plusDays(6) }
@@ -71,9 +71,10 @@ enum class SalesRange(val label: String, val unit: String) {
     }
 
     /** How many periods back the window holding [date] is (0 = the current one). */
-    fun backFor(today: LocalDate, date: LocalDate): Int {
+    fun backFor(today: LocalDate, date: LocalDate, freight: Boolean = false): Int {
         val d = if (date.isAfter(today)) today else date
         val ws = Periods.weekStart(today)
+        if (freight && this == Week) return (ChronoUnit.DAYS.between(Periods.freightWeekStart(d), Periods.freightWeekStart(today)) / 7).toInt().coerceAtLeast(0)
         val end = ws.plusDays(6)
         val n = when (this) {
             Today -> ChronoUnit.DAYS.between(d, today)
@@ -86,8 +87,8 @@ enum class SalesRange(val label: String, val unit: String) {
         return n.toInt().coerceAtLeast(0)
     }
 
-    fun title(today: LocalDate, back: Int): String {
-        val (from, to) = window(today, back)
+    fun title(today: LocalDate, back: Int, freight: Boolean = false): String {
+        val (from, to) = window(today, back, freight)
         return when (this) {
             Today -> if (back == 0) "Today · ${from.format(Fmt.full)}" else from.format(Fmt.full)
             Month -> from.format(java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy", java.util.Locale.US)) + if (back == 0) " (to date)" else ""
@@ -124,11 +125,14 @@ fun SalesScreen(v: Int) {
     var back by rememberSaveable { mutableStateOf(0) }
     var picking by remember { mutableStateOf(false) }
     var view by rememberSaveable { mutableStateOf(0) }
-    val (from, to) = range.window(today, back)
+    // Freight week: Wed–Tue, matching new freight deliveries. Only applies to the Week view.
+    var freightPref by remember { mutableStateOf(ctx.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE).getBoolean("sales_freight_week", false)) }
+    val freight = freightPref && range == SalesRange.Week
+    val (from, to) = range.window(today, back, freight)
 
-    val rows = remember(v, range, back) { repo.linesBetween(from, to) }
-    val voids = remember(v, range, back) { repo.voidsBetween(from, to) }
-    val promoWeeks = remember(v, range, back) { promosByWeek(repo.promosV2(), bannersFor(repo.stores().map { it.second }).toSet(), from, to) }
+    val rows = remember(v, range, back, freight) { repo.linesBetween(from, to) }
+    val voids = remember(v, range, back, freight) { repo.voidsBetween(from, to) }
+    val promoWeeks = remember(v, range, back, freight) { promosByWeek(repo.promosV2(), bannersFor(repo.stores().map { it.second }).toSet(), from, to) }
     val sales = rows.filter { !it.second.isReturn }
     val credits = rows.filter { it.second.isReturn }
     val gross = sales.sumOf { it.second.net }
@@ -146,13 +150,12 @@ fun SalesScreen(v: Int) {
             // Tap the date to pick any day, week, month or year from a calendar.
             Column(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).clickable { picking = true }.padding(horizontal = 6.dp, vertical = 4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(range.title(today, back), fontSize = 17.sp, fontWeight = FontWeight.Bold, lineHeight = 22.sp, modifier = Modifier.weight(1f, fill = false))
+                    Text(range.title(today, back, freight), fontSize = 17.sp, fontWeight = FontWeight.Bold, lineHeight = 22.sp, modifier = Modifier.weight(1f, fill = false))
                     Icon(Icons.Default.DateRange, contentDescription = "Pick a date", tint = C.Green, modifier = Modifier.size(22.dp))
                 }
                 Muted("${routeDays.size} route day" + (if (routeDays.size == 1) "" else "s") + " · tap the date to change it", 13)
             }
             SalesArrow(left = false, enabled = back > 0) { back -= 1 }
-            if (LocalWide.current) Segmented(listOf("Overview", "By store"), view) { view = it }
         }
         if (back > 0) Text(
             "Back to the current ${range.unit}", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 15.sp,
@@ -171,7 +174,7 @@ fun SalesScreen(v: Int) {
                 onDismissRequest = { picking = false },
                 confirmButton = {
                     TextButton(onClick = {
-                        state.selectedDateMillis?.let { ms -> back = range.backFor(today, LocalDate.ofEpochDay(ms / 86_400_000L)) }
+                        state.selectedDateMillis?.let { ms -> back = range.backFor(today, LocalDate.ofEpochDay(ms / 86_400_000L), freight) }
                         picking = false
                     }) { Text("Show this ${range.unit}", fontWeight = FontWeight.Bold) }
                 },
@@ -180,7 +183,35 @@ fun SalesScreen(v: Int) {
                 DatePicker(state = state, title = { Text("Any day in the ${range.unit} you want", modifier = Modifier.padding(start = 24.dp, top = 16.dp)) })
             }
         }
-        if (!LocalWide.current) Segmented(listOf("Overview", "By store"), view) { view = it }
+        // View switch and freight-week toggle, lined up with the tiles below (Net sales, Gross sales).
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Segmented(listOf("Overview", "By store"), view, Modifier.weight(1f), fill = true) { view = it }
+            val weekView = range == SalesRange.Week
+            Row(
+                Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(if (freightPref && weekView) C.GreenSoft else Color.White)
+                    .border(1.dp, C.Line, RoundedCornerShape(12.dp))
+                    .clickable(enabled = weekView) {
+                        freightPref = !freightPref; back = 0
+                        ctx.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE).edit().putBoolean("sales_freight_week", freightPref).apply()
+                    }
+                    .heightIn(min = 54.dp).padding(horizontal = 14.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Freight week", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = if (weekView) C.Ink else C.Muted)
+                    Text(if (weekView) "Wed – Tue" else "Week view only", fontSize = 12.sp, color = C.Muted)
+                }
+                androidx.compose.material3.Switch(
+                    checked = freightPref && weekView, enabled = weekView,
+                    onCheckedChange = { on ->
+                        freightPref = on; back = 0
+                        ctx.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE).edit().putBoolean("sales_freight_week", on).apply()
+                    },
+                    colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = C.Green),
+                )
+            }
+            if (LocalWide.current) { Box(Modifier.weight(1f)); Box(Modifier.weight(1f)) }
+        }
 
         if (rows.isEmpty()) {
             Panel {

@@ -73,6 +73,7 @@ val HOW_TOPICS: List<HowTopic> = listOf(
             "Ranges" to "Day, Week (Sat–Fri), 2 weeks, 4 weeks, Month and Year to date. The arrows step one range back or forward; Pick a date jumps to the range holding that day.",
             "2 and 4 weeks" to "Counted back from the end of the current Sat–Fri week, in whole weeks.",
             "Sales and credits" to "Sales are the dollars on sales tickets; credits are the dollars on return tickets and damage returns. Net = sales − credits. Voided tickets are left out and listed separately.",
+            "Freight week" to "In the Week view, the Freight week switch shows Wednesday through Tuesday, matching when new freight comes in, instead of Saturday through Friday. The arrows and calendar step by freight weeks while it's on. It stays as you left it.",
             "Credit rate" to "Credit dollars ÷ sales dollars for the whole window, one division, never an average of daily rates. Buy backs count against net sales but are left out of the credit rate.",
             "Credit colors" to "Green up to 1.5% (on target), amber up to 2.5% (check it), red above 2.5% (fix it). The line on the meter is the 1.5% target.",
             "Promotions in this window" to "For each Sat–Fri week, the promos that overlapped it for banners you serve, and how much of the week they ran (all week, Mon–Wed, Sat only…).",

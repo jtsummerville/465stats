@@ -45,6 +45,12 @@ object Periods {
 
     fun isLocked(d: LocalDate, today: LocalDate = LocalDate.now()): Boolean = !today.isBefore(lockDate(d))
 
+    /** Wednesday that starts the Wed–Tue freight week holding [d] (new freight comes in on Wednesdays). */
+    fun freightWeekStart(d: LocalDate): LocalDate {
+        val back = (d.dayOfWeek.value - DayOfWeek.WEDNESDAY.value + 7) % 7
+        return d.minusDays(back.toLong())
+    }
+
     /** Saturday that starts the Sat–Fri week holding [d]. */
     fun weekStart(d: LocalDate): LocalDate {
         val back = (d.dayOfWeek.value - DayOfWeek.SATURDAY.value + 7) % 7

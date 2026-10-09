@@ -146,15 +146,15 @@ fun SecondaryButton(text: String, modifier: Modifier = Modifier, enabled: Boolea
 }
 
 @Composable
-fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+fun Segmented(options: List<String>, selected: Int, modifier: Modifier = Modifier, fill: Boolean = false, onSelect: (Int) -> Unit) {
     Row(
-        Modifier.clip(RoundedCornerShape(12.dp)).background(Color.White).border(1.dp, C.Line, RoundedCornerShape(12.dp)).padding(4.dp),
+        modifier.clip(RoundedCornerShape(12.dp)).background(Color.White).border(1.dp, C.Line, RoundedCornerShape(12.dp)).padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         options.forEachIndexed { i, label ->
             val on = i == selected
             Box(
-                Modifier.clip(RoundedCornerShape(9.dp)).background(if (on) C.Ink else Color.Transparent)
+                (if (fill) Modifier.weight(1f) else Modifier).clip(RoundedCornerShape(9.dp)).background(if (on) C.Ink else Color.Transparent)
                     .clickable { onSelect(i) }.heightIn(min = 46.dp).padding(horizontal = 18.dp, vertical = 12.dp),
                 contentAlignment = Alignment.Center,
             ) { Text(label, color = if (on) Color.White else C.Ink, fontWeight = FontWeight.Bold, fontSize = 15.sp) }
