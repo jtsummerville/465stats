@@ -205,7 +205,7 @@ object SheetLayout {
     }
 
     private fun header(dots: Int, p: SheetPrint, total: Int, version: String): Page {
-        val pg = Page(384)
+        val pg = Page(300)
         val bigChars = (dots - 2 * M) / 24
         val smallChars = (dots - 2 * M) / 12
         pg.text(M, 8, Size.Big, "OLE MEXICAN FOODS", center = true)
@@ -215,9 +215,7 @@ object SheetLayout {
         pg.text(M, 170, Size.Small, "CUSTOMER")
         pg.text(M, 196, Size.Big, clean(p.storeName.ifBlank { "Store" }, bigChars))
         if (p.storeCode.isNotBlank()) pg.text(M, 248, Size.Small, clean("Store # ${p.storeCode}", smallChars))
-        pg.text(M, 292, Size.Small, clean("${p.lines.size} product" + (if (p.lines.size == 1) "" else "s") + ", $total eaches", smallChars))
-        pg.text(M, 322, Size.Small, clean("Scan each barcode and enter the eaches shown.", smallChars))
-        pg.line(M, 370, dots - M, 3)
+        pg.line(M, 290, dots - M, 3)
         return pg
     }
 
