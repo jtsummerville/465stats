@@ -118,41 +118,91 @@ object Paperwork {
         return bmp
     }
 
-    /** One PDF of all of today's store photos: stores in the order first photographed, one photo per page. */
+    /**
+     * One PDF of the day's store pages, like a scanner app makes: each page is just the scanned paper, sized to
+     * that paper (long receipts stay long, sideways invoices stay sideways), no border and no label.
+     * Stores come in the order first scanned. The JPEGs go in as-is, so nothing is blurred by re-compressing.
+     */
     fun buildStorePdf(ctx: Context, date: LocalDate, photos: List<StorePhoto>): File? {
         if (photos.isEmpty()) return null
         val groups = LinkedHashMap<String, MutableList<StorePhoto>>()
-        photos.sortedBy { it.takenAt }.forEach { groups.getOrPut(it.cusCode) { ArrayList() }.add(it) }
-
-        val doc = PdfDocument()
-        val head = Paint().apply { textSize = 12f; isAntiAlias = true; typeface = Typeface.DEFAULT_BOLD }
-        val imgPaint = Paint(Paint.FILTER_BITMAP_FLAG)
-        var pageNo = 0
-        for ((_, list) in groups) {
-            list.forEachIndexed { i, p ->
-                val bmp = loadScaled(p.path, 2000) ?: return@forEachIndexed
-                pageNo++
-                val page = doc.startPage(PdfDocument.PageInfo.Builder(612, 792, pageNo).create())
-                val c = page.canvas
-                c.drawText("Route 0465 · ${p.store} · ${date.format(Fmt.full)} · page ${i + 1} of ${list.size}", 36f, 28f, head)
-                val maxW = 540f
-                val maxH = 734f
-                val s = min(maxW / bmp.width, maxH / bmp.height)
-                val w = bmp.width * s
-                val h = bmp.height * s
-                val left = 36f + (maxW - w) / 2f
-                c.drawBitmap(bmp, null, RectF(left, 40f, left + w, 40f + h), imgPaint)
-                doc.finishPage(page)
-                bmp.recycle()
-            }
-        }
-        if (pageNo == 0) {
-            doc.close(); return null
-        }
+        photos.sortedWith(compareBy({ it.takenAt }, { it.id })).forEach { groups.getOrPut(it.cusCode) { ArrayList() }.add(it) }
+        val pages = groups.values.flatten().mapNotNull { uprightJpeg(it.path) }
+        if (pages.isEmpty()) return null
         val f = File(dayDir(ctx, date), "Store_paperwork_0465_$date.pdf")
-        f.outputStream().use { doc.writeTo(it) }
-        doc.close()
+        writeJpegPdf(f, pages, "Route 0465 store paperwork ${date.format(Fmt.mdy)}")
         return f
+    }
+
+    private class JpegPage(val bytes: ByteArray, val w: Int, val h: Int) {
+        /** Colour channels from the JPEG's frame header: 1 = grey (scanner's black-and-white filter), 3 = colour. */
+        val components: Int = run {
+            var i = 2
+            var comps = 3
+            while (i + 9 < bytes.size) {
+                if (bytes[i] != 0xFF.toByte()) { i++; continue }
+                val m = bytes[i + 1].toInt() and 0xFF
+                if (m == 0xD8 || m == 0x01 || m in 0xD0..0xD7 || m == 0xFF) { i++; continue }
+                val len = ((bytes[i + 2].toInt() and 0xFF) shl 8) or (bytes[i + 3].toInt() and 0xFF)
+                if (m in 0xC0..0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC) { comps = bytes[i + 9].toInt() and 0xFF; break }
+                i += 2 + len
+            }
+            comps
+        }
+    }
+
+    /** The page as upright JPEG bytes: the file itself when it needs no turning, otherwise turned and re-saved once. */
+    private fun uprightJpeg(path: String): JpegPage? {
+        val file = File(path)
+        if (!file.isFile) return null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val turned = runCatching {
+            ExifInterface(path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        }.getOrDefault(ExifInterface.ORIENTATION_NORMAL).let { it != ExifInterface.ORIENTATION_NORMAL && it != ExifInterface.ORIENTATION_UNDEFINED }
+        val tooBig = max(bounds.outWidth, bounds.outHeight) > 4000
+        if (bounds.outMimeType == "image/jpeg" && !turned && !tooBig) return JpegPage(file.readBytes(), bounds.outWidth, bounds.outHeight)
+        val bmp = loadScaled(path, 3200) ?: return null
+        val out = java.io.ByteArrayOutputStream()
+        bmp.compress(Bitmap.CompressFormat.JPEG, 92, out)
+        val page = JpegPage(out.toByteArray(), bmp.width, bmp.height)
+        bmp.recycle()
+        return page
+    }
+
+    /** Minimal PDF: one page per JPEG, page size = image size at 200 dpi, image embedded untouched (DCTDecode). */
+    private fun writeJpegPdf(f: File, pages: List<JpegPage>, title: String) {
+        val out = java.io.BufferedOutputStream(f.outputStream())
+        var pos = 0L
+        val offsets = ArrayList<Long>()
+        fun w(s: String) { val b = s.toByteArray(Charsets.ISO_8859_1); out.write(b); pos += b.size }
+        fun wb(b: ByteArray) { out.write(b); pos += b.size }
+        fun obj(n: Int) { while (offsets.size < n) offsets.add(0L); offsets[n - 1] = pos; w("$n 0 obj\n") }
+        val safeTitle = title.replace("(", "").replace(")", "").replace("\\", "")
+        w("%PDF-1.4\n%\u00e2\u00e3\u00cf\u00d3\n")
+        // 1 catalog, 2 pages, 3 info, then per page: page, contents, image.
+        val kids = pages.indices.joinToString(" ") { "${4 + it * 3} 0 R" }
+        obj(1); w("<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+        obj(2); w("<< /Type /Pages /Kids [$kids] /Count ${pages.size} >>\nendobj\n")
+        obj(3); w("<< /Title ($safeTitle) /Producer (465stats) >>\nendobj\n")
+        pages.forEachIndexed { i, p ->
+            val n = 4 + i * 3
+            val pw = p.w * 72.0 / 200.0
+            val ph = p.h * 72.0 / 200.0
+            val pwS = String.format(java.util.Locale.US, "%.2f", pw)
+            val phS = String.format(java.util.Locale.US, "%.2f", ph)
+            obj(n); w("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 $pwS $phS] /Resources << /XObject << /Im0 ${n + 2} 0 R >> >> /Contents ${n + 1} 0 R >>\nendobj\n")
+            val content = "q $pwS 0 0 $phS 0 0 cm /Im0 Do Q\n"
+            obj(n + 1); w("<< /Length ${content.length} >>\nstream\n$content\nendstream\nendobj\n")
+            obj(n + 2); w("<< /Type /XObject /Subtype /Image /Width ${p.w} /Height ${p.h} /ColorSpace ${when (p.components) { 1 -> "/DeviceGray"; 4 -> "/DeviceCMYK"; else -> "/DeviceRGB" }} /BitsPerComponent 8 /Filter /DCTDecode /Length ${p.bytes.size} >>\nstream\n")
+            wb(p.bytes); w("\nendstream\nendobj\n")
+        }
+        val xref = pos
+        w("xref\n0 ${offsets.size + 1}\n0000000000 65535 f \n")
+        offsets.forEach { w(String.format(java.util.Locale.US, "%010d 00000 n \n", it)) }
+        w("trailer\n<< /Size ${offsets.size + 1} /Root 1 0 R /Info 3 0 R >>\nstartxref\n$xref\n%%EOF\n")
+        out.close()
     }
 
     /** Opens the mail app with the bosses' addresses, a subject, a short summary and the PDFs attached. */
