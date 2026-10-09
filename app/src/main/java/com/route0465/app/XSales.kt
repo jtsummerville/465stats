@@ -96,9 +96,15 @@ object XSales {
         if (!hasAccess(ctx)) return emptyList<LiveInvoice>() to "File access isn't allowed yet. Tap \"Allow file access\" on Home."
         val dir = folder(ctx) ?: return emptyList<LiveInvoice>() to "Couldn't find the XSales folder. Set it in Setup › XSales folder."
         val files = dir.listFiles()?.toList().orEmpty()
-        val main = files.firstOrNull { it.isFile && (it.name.equals("Main.sqlite", true) || it.name.equals(".Main.sqlite", true)) }
-            ?: return emptyList<LiveInvoice>() to ("465stats can't see XSales' live file (Main.sqlite) in ${dir.path}. It sees: " +
-                files.sortedBy { it.name.lowercase() }.joinToString(", ") { "${it.name} (${it.length() / 1024} KB)" }.ifEmpty { "nothing" } + ".")
+        fun isMain(f: File) = f.isFile && (f.name.equals("Main.sqlite", true) || f.name.equals(".Main.sqlite", true))
+        // First the XSales folder itself, then everything under the XSales install folder (e.g. "XSales 4.4.1").
+        val root = dir.parentFile
+        val main = files.firstOrNull { isMain(it) }
+            ?: root?.walkTopDown()?.maxDepth(4)?.firstOrNull { isMain(it) }
+            ?: return emptyList<LiveInvoice>() to ("465stats can't see XSales' live file (Main.sqlite) in ${dir.path}" +
+                (if (root != null) " or anywhere under ${root.path}" else "") + ". In ${dir.name} it sees: " +
+                files.sortedBy { it.name.lowercase() }.joinToString(", ") { "${it.name} (${it.length() / 1024} KB)" }.ifEmpty { "nothing" } + "." +
+                (root?.listFiles()?.filter { it.isDirectory }?.map { it.name }?.sorted()?.takeIf { it.isNotEmpty() }?.let { " Folders in ${root.name}: ${it.joinToString(", ")}." } ?: ""))
         if (!main.canRead()) return emptyList<LiveInvoice>() to "Main.sqlite is there but Android won't let 465stats read it."
         val today = LocalDate.now()
         val work = File(ctx.cacheDir, "xsales_live").apply { deleteRecursively(); mkdirs() }
@@ -149,7 +155,7 @@ object XSales {
                 val time = stamp?.substringAfter(' ', "")?.take(5) ?: ""
                 out += LiveInvoice(code, cus, names[cus] ?: cus, time, lines)
             }
-            if (out.isEmpty()) return emptyList<LiveInvoice>() to "No finalized invoices for today in XSales yet."
+            if (out.isEmpty()) return emptyList<LiveInvoice>() to "Found XSales' live file (${main.path}), but there are no finalized invoices for today in it yet."
             return out.sortedByDescending { it.time } to null
         }
     }
