@@ -156,6 +156,13 @@ fun AppRoot(version: MutableState<Int>, goTo: MutableState<Screen?>, shareMsg: M
                         ),
                     )
                 }
+                // Which download is installed, so you always know what version you're on.
+                Spacer(Modifier.height(14.dp))
+                val ctx = LocalContext.current
+                val ver = remember { appVersion(ctx) }
+                Text("© 2026", color = C.RailMuted, fontSize = 11.sp)
+                Text("v$ver", color = C.RailMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(10.dp))
             }
         }
         Column(Modifier.fillMaxSize()) {

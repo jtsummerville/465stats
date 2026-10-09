@@ -144,7 +144,7 @@ val HOW_TOPICS: List<HowTopic> = listOf(
             "Printer connection" to "Bluetooth only, straight to a printer already paired in the tablet's Bluetooth settings. Nothing goes over the internet.",
             "Printer language" to "Zebra printers speak CPCL (older mobile printers like the RW420), ZPL (desktop and most newer ones) or both. On Auto the app asks the printer each time which one it's set to and uses that; if the printer doesn't answer it uses the last one it found, or CPCL.",
             "Paper width" to "2, 3 or 4 inch at 203 dpi (384, 576 or 832 dots). On 2 inch paper the quantity prints under the barcode instead of beside it.",
-            "Paper at the end" to "After the total the printer feeds blank paper so the whole sheet clears the tear bar: Short about 3/4 inch, Medium about 1 1/2 inch, Long about 2 1/4 inch. Set in Setup › Printer.",
+            "Paper at the end" to "After the total and product count the printer feeds blank paper so the whole sheet clears the tear bar: Short about 1/4 inch, Medium about 1/2 inch, Long about 1 inch. Set in Setup › Printer.",
             "Page breaks" to "Each product prints as its own short page, back to back, so a long sheet never overruns the printer's memory.",
         ),
     ),

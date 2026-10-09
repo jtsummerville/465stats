@@ -125,6 +125,7 @@ private fun SetupMenu(v: Int, open: (SetupSection) -> Unit) {
                 }
             }
         }
+        Text("© 2026 465stats  ·  version ${appVersion(ctx)}", fontSize = 13.sp, color = C.Muted, modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
@@ -913,7 +914,7 @@ private fun PrinterSection(back: () -> Unit) {
                         busy = true; msg = null
                         scope.launch {
                             val sample = runCatching { Upc.all(ctx).firstOrNull { it.upc.isNotEmpty() } }.getOrNull()
-                            val r = withContext(Dispatchers.IO) { runCatching { Zebra.print(ctx) { l, d, f -> SheetLayout.test(l, d, f, sample, appVersion(ctx)) } } }
+                            val r = withContext(Dispatchers.IO) { runCatching { Zebra.print(ctx) { l, d, f -> SheetLayout.test(l, d, f, sample) } } }
                             busy = false; shown++
                             msg = r.fold({ "Test sent using ${it.uppercase()}." to true }, { (it.message ?: "Printing failed.") to false })
                         }

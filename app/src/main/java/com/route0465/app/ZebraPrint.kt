@@ -36,9 +36,9 @@ object PrinterPrefs {
     fun setWidthDots(ctx: Context, v: Int) = sp(ctx).edit().putInt("width", v).apply()
 
     /** Blank paper fed after the last line so the end clears the tear bar, in dots (203 per inch). */
-    fun feedDots(ctx: Context): Int = sp(ctx).getInt("feed", 300)
+    fun feedDots(ctx: Context): Int = sp(ctx).getInt("feed", 100).let { v -> if (FEEDS.any { it.first == v }) v else 100 }
     fun setFeedDots(ctx: Context, v: Int) = sp(ctx).edit().putInt("feed", v).apply()
-    val FEEDS = listOf(150 to "Short", 300 to "Medium", 450 to "Long")
+    val FEEDS = listOf(40 to "Short", 100 to "Medium", 200 to "Long")
     fun feedLabel(d: Int) = FEEDS.firstOrNull { it.first == d }?.second ?: "$d dots"
 
     val WIDTHS = listOf(384 to "2 inch", 576 to "3 inch", 832 to "4 inch")
@@ -182,25 +182,25 @@ object SheetLayout {
 
     private const val M = 16
 
-    fun build(lang: String, dots: Int, feed: Int, p: SheetPrint, version: String): String {
+    fun build(lang: String, dots: Int, feed: Int, p: SheetPrint): String {
         val total = p.lines.sumOf { it.qty }
         val sb = StringBuilder()
         val pages = mutableListOf<Page>()
         pages += header(dots, p, total)
         p.lines.forEach { pages += product(dots, it) }
-        pages += footer(dots, p.lines.size, total, feed, version)
+        pages += footer(dots, p.lines.size, total, feed)
         pages.forEach { sb.append(if (lang == "zpl") it.zpl(dots) else it.cpcl(dots)) }
         return sb.toString()
     }
 
-    fun test(lang: String, dots: Int, feed: Int, sample: UpcItem?, version: String): String {
+    fun test(lang: String, dots: Int, feed: Int, sample: UpcItem?): String {
         val pages = mutableListOf<Page>()
         val pg = Page(110)
         pg.text(M, 10, Size.Big, "465stats test print", center = true)
         pg.text(M, 66, Size.Small, clean("Language ${lang.uppercase()} - paper ${PrinterPrefs.widthLabel(dots)}", 60), center = true)
         pages += pg
         if (sample != null) pages += product(dots, SheetLine(sample.code, sample.desc, sample.upc, sample.casePack, 12))
-        pages += Page(100 + feed).also { it.text(M, 10, Size.Small, "If the barcode above scans, you're set.", center = true); copyright(it, 50, version) }
+        pages += Page(50 + feed).also { it.text(M, 10, Size.Small, "If the barcode above scans, you're set.", center = true) }
         return pages.joinToString("") { if (lang == "zpl") it.zpl(dots) else it.cpcl(dots) }
     }
 
@@ -243,18 +243,12 @@ object SheetLayout {
         return pg
     }
 
-    private fun footer(dots: Int, n: Int, total: Int, feed: Int, version: String): Page {
-        // The blank space under the copyright line is what pushes the paper out past the tear bar.
-        val pg = Page(150 + feed)
+    private fun footer(dots: Int, n: Int, total: Int, feed: Int): Page {
+        // The blank space under the product count pushes the end of the sheet past the tear bar.
+        val pg = Page(96 + feed)
         pg.text(M, 14, Size.Big, "TOTAL  $total EACHES")
         pg.text(M, 66, Size.Small, "$n product" + if (n == 1) "" else "s")
-        copyright(pg, 108, version)
         return pg
-    }
-
-    private fun copyright(pg: Page, y: Int, version: String) {
-        pg.copyMark(M, y)
-        pg.text(M + 32, y, Size.Small, clean("2026 465stats - version $version", 60))
     }
 
     enum class Size { Small, Big, Huge }
@@ -265,8 +259,6 @@ object SheetLayout {
         /** A solid black bar, drawn exactly so barcodes come out the same width on every printer. */
         private class B(val x: Int, val y: Int, val w: Int, val h: Int) : Op()
         private class L(val x0: Int, val y: Int, val x1: Int, val w: Int) : Op()
-        /** A small black-and-white picture: rows of bytes, leftmost dot in the high bit. */
-        private class G(val x: Int, val y: Int, val wBytes: Int, val h: Int, val hex: String) : Op()
         private val ops = mutableListOf<Op>()
 
         fun text(x: Int, y: Int, size: Size, s: String, center: Boolean = false) { ops += T(x, y, size, s, center) }
@@ -288,25 +280,6 @@ object SheetLayout {
         }
         fun line(x0: Int, y: Int, x1: Int, w: Int) { ops += L(x0, y, x1, w) }
 
-        /** The (C) copyright mark, drawn as a 24-dot picture so it prints the same on any printer font. */
-        fun copyMark(x: Int, y: Int) {
-            val n = 24
-            val sb = StringBuilder()
-            for (row in 0 until n) {
-                var bits = 0
-                for (col in 0 until n) {
-                    val dx = col + 0.5 - n / 2.0
-                    val dy = row + 0.5 - n / 2.0
-                    val r = Math.hypot(dx, dy)
-                    val ring = r in 9.6..11.9
-                    val c = r in 4.0..6.3 && !(dx > 1.5 && kotlin.math.abs(dy) < 3.5)
-                    bits = (bits shl 1) or (if (ring || c) 1 else 0)
-                }
-                sb.append(String.format("%06X", bits))
-            }
-            ops += G(x, y, n / 8, n, sb.toString())
-        }
-
         fun cpcl(dots: Int): String {
             // JOURNAL = continuous receipt roll: no hunting for label gaps, no backing up over what already printed.
             val sb = StringBuilder("! 0 200 200 $h 1\r\nPAGE-WIDTH $dots\r\nJOURNAL\r\n")
@@ -320,7 +293,6 @@ object SheetLayout {
                 // One-dot-wide vertical lines side by side: no guessing which way a thick line grows.
                 is B -> for (dx in 0 until o.w) sb.append("LINE ${o.x + dx} ${o.y} ${o.x + dx} ${o.y + o.h} 1\r\n")
                 is L -> sb.append("LINE ${o.x0} ${o.y} ${o.x1} ${o.y} ${o.w}\r\n")
-                is G -> sb.append("EG ${o.wBytes} ${o.h} ${o.x} ${o.y} ${o.hex}\r\n")
             }
             sb.append("PRINT\r\n")
             return sb.toString()
@@ -337,7 +309,6 @@ object SheetLayout {
                 }
                 is B -> sb.append("^FO${o.x},${o.y}^GB${o.w},${o.h},${o.w}^FS\n")
                 is L -> sb.append("^FO${o.x0},${o.y}^GB${o.x1 - o.x0},${o.w},${o.w}^FS\n")
-                is G -> { val t = o.wBytes * o.h; sb.append("^FO${o.x},${o.y}^GFA,$t,$t,${o.wBytes},${o.hex}^FS\n") }
             }
             sb.append("^XZ\n")
             return sb.toString()
