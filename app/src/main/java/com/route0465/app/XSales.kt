@@ -243,10 +243,14 @@ object XSales {
                 // is negative. Any negative line is a credit, whatever the ticket type.
                 val lineRet = doc.isReturn || q < 0 || net < 0
                 if (q != 0.0) lines += Ln(doc, pc, name, abs(q), price, if (lineRet) -abs(net) else net, lineRet, doc.isBuyback)
-                val dq = r.num("iprDamageReturnQuantity")
-                if (!doc.isReturn && dq > 0) {
-                    val da = r.g("iprDamageReturnAmount")?.toDoubleOrNull() ?: (dq * price)
-                    lines += Ln(doc, pc, name, dq, price, -abs(da), true)
+                // Returned product can sit in its own fields instead of the quantity, on a credit ticket too
+                // (XSales put a damaged credit at Jungle Jim's, 10/09, only in iprDamageReturnQuantity).
+                // Each counts as a credit line; on a credit ticket it's only used when the quantity is empty, so nothing counts twice.
+                for ((qtyField, amtField) in listOf("iprDamageReturnQuantity" to "iprDamageReturnAmount", "iprReturnQuantity" to "iprReturnAmount")) {
+                    val rq = abs(r.num(qtyField))
+                    if (rq <= 0.0 || (doc.isReturn && q != 0.0)) continue
+                    val ra = r.g(amtField)?.toDoubleOrNull()?.takeIf { it != 0.0 } ?: (rq * price)
+                    lines += Ln(doc, pc, name, rq, price, -abs(ra), true, doc.isBuyback)
                 }
             }
 
