@@ -39,6 +39,8 @@ data class LineRow(
     val price: Double,
     val net: Double,
     val isReturn: Boolean,
+    /** A buy back (company's return): counted with returns, but costs commission only and stays out of the credit rate. */
+    val isBuyback: Boolean = false,
 )
 
 data class StockRow(
@@ -130,6 +132,11 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
             val has = db.list("PRAGMA table_info(order_items)") { it.getString(1) }.contains(name)
             if (!has) db.execSQL("ALTER TABLE order_items ADD COLUMN $col")
         }
+        // Buy backs (XSales doc code grt): a return that costs commission only.
+        for (t in listOf("docs", "lines")) {
+            val cols = db.list("PRAGMA table_info($t)") { it.getString(1) }
+            if ("buyback" !in cols) db.execSQL("ALTER TABLE $t ADD COLUMN buyback INTEGER DEFAULT 0")
+        }
         // Stores and products you change yourself: manual = keep your version over XSales', hidden = removed by you.
         for (t in listOf("stores", "products")) {
             val cols = db.list("PRAGMA table_info($t)") { it.getString(1) }
@@ -200,7 +207,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
     fun lines(date: LocalDate): List<LineRow> = readableDatabase.list(
         "SELECT * FROM lines WHERE date=?", arrayOf(date.toString())
     ) { c ->
-        LineRow(c.s("dmd_code"), c.s("cus_code"), c.s("store"), c.s("code"), c.s("name"), c.d("qty"), c.d("price"), c.d("net"), c.i("is_return") == 1)
+        LineRow(c.s("dmd_code"), c.s("cus_code"), c.s("store"), c.s("code"), c.s("name"), c.d("qty"), c.d("price"), c.d("net"), c.i("is_return") == 1, c.i("buyback") == 1)
     }
 
     /** Every sale and credit line from tickets that weren't voided, for days from..to (inclusive). */
@@ -210,7 +217,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
         arrayOf(from.toString(), to.toString())
     ) { c ->
         LocalDate.parse(c.s("date")) to
-            LineRow(c.s("dmd_code"), c.s("cus_code"), c.s("store"), c.s("code"), c.s("name"), c.d("qty"), c.d("price"), c.d("net"), c.i("is_return") == 1)
+            LineRow(c.s("dmd_code"), c.s("cus_code"), c.s("store"), c.s("code"), c.s("name"), c.d("qty"), c.d("price"), c.d("net"), c.i("is_return") == 1, c.i("buyback") == 1)
     }
 
     fun voidsBetween(from: LocalDate, to: LocalDate): List<Pair<LocalDate, DocRow>> = readableDatabase.list(
@@ -303,6 +310,19 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
     // ---------- rates ----------
 
     /**
+     * Taco-Boys pay math for one line. Sale: + commission. Credit: − (commission + cost, the part Ole
+     * doesn't credit back). Buy back: − commission only.
+     */
+    fun linePay(qty: Double, rate: Rate, isReturn: Boolean, isBuyback: Boolean): Double {
+        val commission = qty * rate.marketRate * rate.commissionPct
+        return when {
+            isBuyback -> -commission
+            isReturn -> -(commission + qty * rate.marketRate * (1 - rate.creditPct))
+            else -> commission
+        }
+    }
+
+    /**
      * Figures pay again for imported days in pay periods that aren't locked yet, from their saved lines and
      * the rates in effect on each day's own date. Same math as an import. Locked periods are never touched.
      * Returns how many days' pay changed.
@@ -318,20 +338,19 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
                 val day = runCatching { LocalDate.parse(date) }.getOrNull() ?: continue
                 if (Periods.isLocked(day)) continue
                 val voided = w.list("SELECT dmd_code FROM docs WHERE date=? AND voided=1", arrayOf(date)) { it.getString(0) ?: "" }.toSet()
-                val lines = w.list("SELECT rowid, dmd_code, code, qty, is_return FROM lines WHERE date=?", arrayOf(date)) {
-                    listOf(it.getLong(0), it.getString(1) ?: "", it.getString(2) ?: "", it.getDouble(3), it.getInt(4) == 1)
+                val lines = w.list("SELECT rowid, dmd_code, code, qty, is_return, COALESCE(buyback,0) FROM lines WHERE date=?", arrayOf(date)) {
+                    listOf(it.getLong(0), it.getString(1) ?: "", it.getString(2) ?: "", it.getDouble(3), it.getInt(4) == 1, it.getInt(5) == 1)
                 }
                 val missing = sortedSetOf<String>()
                 var total = 0.0
                 for (l in lines) {
                     val rowid = l[0] as Long; val doc = l[1] as String; val code = l[2] as String
-                    val qty = l[3] as Double; val isReturn = l[4] as Boolean
+                    val qty = l[3] as Double; val isReturn = l[4] as Boolean; val isBuyback = l[5] as Boolean
                     val pay = if (doc in voided) 0.0 else {
                         val rate = rateFor(code, date)
                         if (rate == null || rate.marketRate == 0.0 || rate.commissionPct == 0.0) { missing += code; 0.0 }
                         else {
-                            val commission = qty * rate.marketRate * rate.commissionPct
-                            if (isReturn) -(commission + qty * rate.marketRate * (1 - rate.creditPct)) else commission
+                            linePay(qty, rate, isReturn, isBuyback)
                         }
                     }
                     total += pay

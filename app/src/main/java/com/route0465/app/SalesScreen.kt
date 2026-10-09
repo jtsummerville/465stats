@@ -135,7 +135,8 @@ fun SalesScreen(v: Int) {
     val creditDollars = credits.sumOf { abs(it.second.net) }
     val net = gross - creditDollars
     val routeDays = rows.map { it.first }.distinct().sorted()
-    val rate = if (gross > 0) creditDollars / gross else 0.0
+    // Like Taco-Boys, buy backs are the company's return: they count against net sales but not the credit rate.
+    val rate = if (gross > 0) credits.filter { !it.second.isBuyback }.sumOf { abs(it.second.net) } / gross else 0.0
 
     ScreenColumn {
         // ---- Period menu, back/forward arrows, view switch ----

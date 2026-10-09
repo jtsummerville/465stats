@@ -144,10 +144,10 @@ object XSales {
 
     private class Doc(
         val code: String, val cus: String, val store: String, val isReturn: Boolean,
-        val net: Double, val voided: Boolean, val reason: String,
+        val net: Double, val voided: Boolean, val reason: String, val isBuyback: Boolean = false,
     )
 
-    private class Ln(val doc: Doc, val code: String, val name: String, val qty: Double, val price: Double, val net: Double, val isReturn: Boolean)
+    private class Ln(val doc: Doc, val code: String, val name: String, val qty: Double, val price: Double, val net: Double, val isReturn: Boolean, val isBuyback: Boolean = false)
 
     @Synchronized
     fun runImport(ctx: Context, useBefore: Boolean = false): ImportResult {
@@ -218,12 +218,15 @@ object XSales {
                 }
                 val code = r.g("dmdCode") ?: run { dropped++; return@forEach }
                 val cus = r.g("cusCode") ?: ""
-                val isRet = (r.g("docCode") ?: "").lowercase().startsWith("rtn")
+                // Doc codes (Taco-Boys, confirmed on real route reports): invdst = invoice, rtndst = credit, grt = buy back.
+                val docCode = (r.g("docCode") ?: "").lowercase()
+                val isBuy = docCode.startsWith("grt")
+                val isRet = docCode.startsWith("rtn") || isBuy
                 val cancel = r.g("dmdCancelInvoice") ?: "0"
                 val voided = cancel == "1" || cancel.equals("true", ignoreCase = true)
                 val reason = r.g("reaCancelInvoice")?.let { reasons[it] ?: it } ?: ""
                 val raw = r.num("dmdNetAmount")
-                kept += Doc(code, cus, storeNames[cus] ?: cus, isRet, if (isRet) -abs(raw) else raw, voided, reason)
+                kept += Doc(code, cus, storeNames[cus] ?: cus, isRet, if (isRet) -abs(raw) else raw, voided, reason, isBuy)
             }
 
             val byCode = kept.associateBy { it.code }
@@ -236,7 +239,7 @@ object XSales {
                 val q = r.num("iprQuantity")
                 val price = r.num("iprPrice")
                 val net = r.g("iprNetAmount")?.toDoubleOrNull() ?: (q * price)
-                if (q != 0.0) lines += Ln(doc, pc, name, abs(q), price, if (doc.isReturn) -abs(net) else net, doc.isReturn)
+                if (q != 0.0) lines += Ln(doc, pc, name, abs(q), price, if (doc.isReturn) -abs(net) else net, doc.isReturn, doc.isBuyback)
                 val dq = r.num("iprDamageReturnQuantity")
                 if (!doc.isReturn && dq > 0) {
                     val da = r.g("iprDamageReturnAmount")?.toDoubleOrNull() ?: (dq * price)
@@ -253,8 +256,7 @@ object XSales {
                     if (rate == null || rate.marketRate == 0.0 || rate.commissionPct == 0.0) {
                         missing += l.code; 0.0
                     } else {
-                        val commission = l.qty * rate.marketRate * rate.commissionPct
-                        if (l.isReturn) -(commission + l.qty * rate.marketRate * (1 - rate.creditPct)) else commission
+                        repo.linePay(l.qty, rate, l.isReturn, l.isBuyback)
                     }
                 }
             }
@@ -281,7 +283,7 @@ object XSales {
                 kept.forEach { d ->
                     w.insert("docs", null, ContentValues().apply {
                         put("date", dayStr); put("dmd_code", d.code); put("cus_code", d.cus); put("store", d.store)
-                        put("is_return", if (d.isReturn) 1 else 0); put("net", d.net)
+                        put("is_return", if (d.isReturn) 1 else 0); put("net", d.net); put("buyback", if (d.isBuyback) 1 else 0)
                         put("voided", if (d.voided) 1 else 0); put("void_reason", d.reason)
                     })
                 }
@@ -289,7 +291,7 @@ object XSales {
                     w.insert("lines", null, ContentValues().apply {
                         put("date", dayStr); put("dmd_code", l.doc.code); put("cus_code", l.doc.cus); put("store", l.doc.store)
                         put("code", l.code); put("name", l.name); put("qty", l.qty); put("price", l.price); put("net", l.net)
-                        put("is_return", if (l.isReturn) 1 else 0); put("pay", linePay[i])
+                        put("is_return", if (l.isReturn) 1 else 0); put("buyback", if (l.isBuyback) 1 else 0); put("pay", linePay[i])
                     })
                 }
                 stock.forEach { s ->
