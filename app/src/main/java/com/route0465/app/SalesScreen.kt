@@ -138,9 +138,12 @@ fun SalesScreen(v: Int) {
     val rows = remember(v, range, back, freight) { repo.linesBetween(from, to) }
     val voids = remember(v, range, back, freight) { repo.voidsBetween(from, to) }
     // Visit averages need a few weeks: the window itself, or the 4 weeks ending with it when it's shorter.
-    val visitFrom = if (java.time.temporal.ChronoUnit.DAYS.between(from, to) >= 27) from else to.minusDays(27)
-    val visitRows = remember(v, range, back, freight) { if (visitFrom == from) null else repo.linesBetween(visitFrom, to) }
-    val visitBasis = VisitBasis(visitFrom, to, visitRows)
+    val firstImport = remember(v) { repo.days().minOfOrNull { it.date } }
+    val visitStart = if (java.time.temporal.ChronoUnit.DAYS.between(from, to) >= 27) from else to.minusDays(27)
+    // Never count days before the first import: there's no data for them, so they'd water the average down.
+    val visitFrom = if (firstImport != null && firstImport.isAfter(visitStart)) firstImport else visitStart
+    val visitRows = remember(v, range, back, freight) { if (!visitFrom.isBefore(from)) null else repo.linesBetween(visitFrom, to) }
+    val visitBasis = VisitBasis(if (visitFrom.isAfter(to)) to else visitFrom, to, visitRows)
     val promoWeeks = remember(v, range, back, freight) { promosByWeek(repo.promosV2(), bannersFor(repo.stores().map { it.second }).toSet(), from, to) }
     val sales = rows.filter { !it.second.isReturn }
     val credits = rows.filter { it.second.isReturn }
