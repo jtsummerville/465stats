@@ -130,6 +130,11 @@ fun SalesScreen(v: Int) {
     val freight = freightPref && range == SalesRange.Week
     val (from, to) = range.window(today, back, freight)
 
+    // Dollars or cases. Everything underneath stays in eaches; cases = eaches ÷ case size.
+    val prefs = ctx.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+    var cases by remember { mutableStateOf(prefs.getBoolean("sales_cases", false)) }
+    val packs = remember(v) { repo.casePacks() }
+    var storeOpen by rememberSaveable { mutableStateOf("") }
     val rows = remember(v, range, back, freight) { repo.linesBetween(from, to) }
     val voids = remember(v, range, back, freight) { repo.voidsBetween(from, to) }
     val promoWeeks = remember(v, range, back, freight) { promosByWeek(repo.promosV2(), bannersFor(repo.stores().map { it.second }).toSet(), from, to) }
@@ -210,7 +215,14 @@ fun SalesScreen(v: Int) {
                     colors = androidx.compose.material3.SwitchDefaults.colors(checkedTrackColor = C.Green),
                 )
             }
-            if (LocalWide.current) { Box(Modifier.weight(1f)); Box(Modifier.weight(1f)) }
+            if (LocalWide.current) {
+                Segmented(listOf("Dollars", "Cases"), if (cases) 1 else 0, Modifier.weight(1f), fill = true) { cases = it == 1; prefs.edit().putBoolean("sales_cases", cases).apply() }
+                Box(Modifier.weight(1f))
+            }
+        }
+        if (!LocalWide.current) Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Segmented(listOf("Dollars", "Cases"), if (cases) 1 else 0, Modifier.weight(1f), fill = true) { cases = it == 1; prefs.edit().putBoolean("sales_cases", cases).apply() }
+            Box(Modifier.weight(1f))
         }
 
         if (rows.isEmpty()) {
@@ -219,153 +231,66 @@ fun SalesScreen(v: Int) {
                 Muted(if (range == SalesRange.Today && back == 0) "Sales show up after today's End of Day import. Use the ‹ arrow to look at earlier days." else "Use the arrows to look at another ${range.unit}, or pick a different window.")
             }
         } else if (view == 0) {
-            // ---- Overview: main sales, then credits right under ----
-            val tiles: List<@Composable (Modifier) -> Unit> = listOf(
-                { m -> Tile("Net sales", Fmt.money(net), m) },
-                { m -> Tile("Gross sales", Fmt.money(gross), m) },
-                { m -> Tile("Credits", Fmt.money(-creditDollars), m, valueColor = if (creditDollars > 0) C.Red else C.Ink) },
-                { m -> Tile("Stores", sales.map { it.second.cusCode }.distinct().size.toString(), m) },
-            )
-            tiles.chunked(if (LocalWide.current) 4 else 2).forEach { r ->
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { r.forEach { t -> t(Modifier.weight(1f)) } }
-            }
-
-            Panel {
-                if (range == SalesRange.Today) {
-                    H2("Net sales by store")
-                    val byStore = rows.groupBy { it.second.store }.map { (s, l) -> s to l.sumOf { it.second.net } }.sortedByDescending { it.second }
-                    BarList(byStore.map { it.first to it.second }, Fmt::money)
-                } else {
-                    val weekly = range == SalesRange.Year
-                    H2(if (weekly) "Net sales by week" else "Net sales by route day")
-                    val buckets = if (weekly) {
-                        rows.groupBy { Periods.weekStart(it.first) }.toSortedMap().map { (d, l) -> d.format(Fmt.md) to l.sumOf { it.second.net } }
-                    } else {
-                        rows.groupBy { it.first }.toSortedMap().map { (d, l) -> d.format(Fmt.md) to l.sumOf { it.second.net } }
-                    }
-                    BarChart(buckets)
-                }
-            }
-
-            // Credit rate, Taco-Boys style
-            Panel {
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Column(Modifier.weight(1f)) {
-                        H2("Credit rate")
-                        Muted("Credits as a share of gross sales: ${Fmt.money(creditDollars)} of ${Fmt.money(gross)}.", 14)
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(pct(rate), fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, color = bandColor(rate))
-                        Text(bandLabel(rate), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = bandColor(rate))
-                    }
-                }
-                RateMeter(rate)
-
-                if (range != SalesRange.Today && range != SalesRange.Week) {
-                    HorizontalDivider(color = C.Divider)
-                    Text("Week to week", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    val weeks = rows.groupBy { Periods.weekStart(it.first) }.toSortedMap().map { (wk, l) ->
-                        val g = l.filter { !it.second.isReturn }.sumOf { it.second.net }
-                        val c = l.filter { it.second.isReturn }.sumOf { abs(it.second.net) }
-                        Triple("${wk.format(Fmt.md)} – ${wk.plusDays(6).format(Fmt.md)}", if (g > 0) c / g else 0.0, c)
-                    }
-                    val top = max(weeks.maxOfOrNull { it.second } ?: 0.0, ELEVATED)
-                    weeks.forEach { (label, r, c) ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(label, fontSize = 14.sp, modifier = Modifier.width(118.dp))
-                            Box(Modifier.weight(1f).height(18.dp).clip(RoundedCornerShape(4.dp)).background(C.Ground)) {
-                                Box(Modifier.fillMaxHeight().fillMaxWidth((r / top).toFloat().coerceIn(0.01f, 1f)).background(bandColor(r)))
-                            }
-                            Text(pct(r), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = bandColor(r), textAlign = TextAlign.End, modifier = Modifier.width(72.dp))
-                        }
-                    }
-                }
-
-                if (credits.isNotEmpty()) {
-                    HorizontalDivider(color = C.Divider)
-                    var showCredits by remember { mutableStateOf(false) }
-                    Expander("Credit lines", "${credits.size}", showCredits) { showCredits = !showCredits }
-                    if (showCredits) {
-                        credits.sortedByDescending { it.first }.forEach { (d, l) ->
-                            Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
-                                Text("${d.format(Fmt.md)} · ${l.store} · ${l.code} ${l.name} · ${Fmt.qty(l.qty)}", fontSize = 14.sp, modifier = Modifier.weight(1f))
-                                Text(Fmt.money(-abs(l.net)), fontSize = 14.sp, color = C.Red, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (promoWeeks.isNotEmpty()) {
-                Panel {
-                    H2("Promotions in this window")
-                    Muted("What was on sale each Sat–Fri week, for the banners on your route.", 13)
-                    promoWeeks.forEach { (wk, lines) ->
-                        HorizontalDivider(color = C.Divider)
-                        Text("Week of ${wk.format(Fmt.full)}", fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp))
-                        lines.forEach { l ->
-                            Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                                Text("${l.banner} — ${l.type}", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                                Text("${l.coverage} · ${l.codes.joinToString(", ")}", fontSize = 14.sp, color = C.Muted)
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (voids.isNotEmpty()) {
-                Panel {
-                    var showVoids by remember { mutableStateOf(false) }
-                    Expander("Voided tickets (not counted)", "${voids.size}", showVoids) { showVoids = !showVoids }
-                    if (showVoids) voids.forEach { (d, doc) ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
-                            Text("${d.format(Fmt.md)} · ${doc.store}" + if (doc.voidReason.isNotEmpty()) " · ${doc.voidReason}" else "", fontSize = 14.sp, color = C.Muted, modifier = Modifier.weight(1f))
-                            Text(Fmt.money(doc.net), fontSize = 14.sp, color = C.Muted)
-                        }
-                    }
-                }
-            }
+            SalesOverview(rows, voids, promoWeeks, range, cases, packs, oneStore = false)
         } else {
-            // ---- By store: totals for the window, tap for products ----
-            var open by remember(range) { mutableStateOf<String?>(null) }
-            val stores = rows.groupBy { it.second.cusCode }.map { (cus, l) ->
-                val g = l.filter { !it.second.isReturn }.sumOf { it.second.net }
-                val c = l.filter { it.second.isReturn }.sumOf { abs(it.second.net) }
-                StoreTotal(cus, l.first().second.store, g, c, l.map { it.first }.distinct().size, l.map { it.second })
-            }.sortedByDescending { it.gross - it.credits }
-            Panel(pad = 0.dp) {
-                Text("Stores, tap for products", fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 8.dp))
-                stores.forEach { s ->
-                    val isOpen = open == s.cus
-                    val r = if (s.gross > 0) s.credits / s.gross else 0.0
-                    HorizontalDivider(color = C.Divider)
-                    Row(
-                        Modifier.fillMaxWidth().background(if (isOpen) C.Row else Color.White).clickable { open = if (isOpen) null else s.cus }
-                            .heightIn(min = 64.dp).padding(horizontal = 20.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(if (isOpen) "▾  " else "▸  ", color = C.Muted, fontSize = 18.sp)
-                        Column(Modifier.weight(1f)) {
-                            Text(s.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Muted("${s.visits} visit" + (if (s.visits == 1) "" else "s") + " · credits ${Fmt.money(s.credits)} (${pct(r)})", 13)
-                        }
-                        Text(Fmt.money(s.gross - s.credits), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+            val m = Measure(cases, packs)
+            val selected = storeOpen.takeIf { sel -> sel.isNotEmpty() && rows.any { it.second.cusCode == sel } }
+            if (selected != null) {
+                // ---- One store: the same overview, just for this store, then its products ----
+                val sRows = rows.filter { it.second.cusCode == selected }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text(
+                        "‹  All stores", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 17.sp,
+                        modifier = Modifier.clickable { storeOpen = "" }.padding(vertical = 10.dp, horizontal = 4.dp),
+                    )
+                    Text(sRows.first().second.store, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+                }
+                SalesOverview(sRows, voids.filter { it.second.cusCode == selected }, emptyList(), range, cases, packs, oneStore = true)
+                Panel {
+                    H2("Products")
+                    // Cases view: sold and credited in cases. Dollars view: eaches and dollars for each.
+                    val w = if (cases) listOf(0.8f, 3f, 1.1f, 1.1f) else listOf(0.8f, 3f, 0.9f, 1.1f, 0.9f, 1.1f)
+                    TableRow(
+                        if (cases) listOf("Code", "Product", "Sold", "Credited") else listOf("Code", "Product", "Sold", "Sales", "Cred.", "Credit $"),
+                        w, header = true, endAligned = if (cases) setOf(2, 3) else setOf(2, 3, 4, 5),
+                    )
+                    sRows.map { it.second }.groupBy { it.code }.map { (code, l) ->
+                        val sold = l.filter { !it.isReturn }
+                        val cr = l.filter { it.isReturn }
+                        val crQty = if (cr.isEmpty()) "—" else m.qty(code, cr.sumOf { it.qty })
+                        (if (cases) listOf(code, l.first().name, m.qty(code, sold.sumOf { it.qty }), crQty)
+                        else listOf(
+                            code, l.first().name, Fmt.qty(sold.sumOf { it.qty }), Fmt.money(sold.sumOf { it.net }),
+                            crQty, if (cr.isEmpty()) "—" else Fmt.money(-cr.sumOf { abs(it.net) }),
+                        )) to sold.sumOf { m.of(it) }
+                    }.sortedByDescending { it.second }.forEach { (cells, _) ->
+                        HorizontalDivider(color = C.Divider)
+                        TableRow(cells, w, bold = setOf(2, 3), endAligned = if (cases) setOf(2, 3) else setOf(2, 3, 4, 5))
                     }
-                    if (isOpen) {
-                        Column(Modifier.fillMaxWidth().background(C.Row).padding(start = 46.dp, end = 20.dp, bottom = 12.dp)) {
-                            val w = listOf(0.8f, 3f, 0.8f, 1f, 0.8f, 1f)
-                            TableRow(listOf("Code", "Product", "Sold", "Sales", "Cred.", "Credit $"), w, header = true, endAligned = setOf(2, 3, 4, 5))
-                            s.lines.groupBy { it.code }.map { (code, l) ->
-                                val sold = l.filter { !it.isReturn }
-                                val cr = l.filter { it.isReturn }
-                                listOf(
-                                    code, l.first().name, Fmt.qty(sold.sumOf { it.qty }), Fmt.money(sold.sumOf { it.net }),
-                                    if (cr.isEmpty()) "—" else Fmt.qty(cr.sumOf { it.qty }), if (cr.isEmpty()) "—" else Fmt.money(-cr.sumOf { abs(it.net) }),
-                                ) to sold.sumOf { it.net }
-                            }.sortedByDescending { it.second }.forEach { (cells, _) ->
-                                HorizontalDivider(color = C.Divider)
-                                TableRow(cells, w, bold = setOf(3), endAligned = setOf(2, 3, 4, 5))
+                }
+            } else {
+                // ---- By store: one row per store; tap for that store's own overview ----
+                val stores = rows.groupBy { it.second.cusCode }.map { (cus, l) ->
+                    val g = l.filter { !it.second.isReturn }.sumOf { m.of(it.second) }
+                    val c = l.filter { it.second.isReturn }.sumOf { m.of(it.second) }
+                    val cNoBuy = l.filter { it.second.isReturn && !it.second.isBuyback }.sumOf { m.of(it.second) }
+                    StoreTotal(cus, l.first().second.store, g, c, cNoBuy, l.map { it.first }.distinct().size)
+                }.sortedByDescending { it.gross - it.credits }
+                Panel(pad = 0.dp) {
+                    Text("Stores, tap one for its own overview", fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 8.dp))
+                    stores.forEach { st ->
+                        val r = if (st.gross > 0) st.creditsNoBuyback / st.gross else 0.0
+                        HorizontalDivider(color = C.Divider)
+                        Row(
+                            Modifier.fillMaxWidth().clickable { storeOpen = st.cus }.heightIn(min = 64.dp).padding(horizontal = 20.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(st.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                Muted("${st.visits} visit" + (if (st.visits == 1) "" else "s") + " · credits ${m.fmt(st.credits)} · " + pct(r), 13)
                             }
+                            Text(m.fmt(st.gross - st.credits), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                            Text("  ›", fontSize = 24.sp, color = C.Muted)
                         }
                     }
                 }
@@ -374,7 +299,158 @@ fun SalesScreen(v: Int) {
     }
 }
 
-private class StoreTotal(val cus: String, val name: String, val gross: Double, val credits: Double, val visits: Int, val lines: List<LineRow>)
+/** Turns a line into dollars or cases. Cases = eaches ÷ the product's case size (1 when it's unknown). */
+private class Measure(val cases: Boolean, val packs: Map<String, Double>) {
+    fun pack(code: String) = packs[code.uppercase()]?.takeIf { it > 0 } ?: 1.0
+    fun of(l: LineRow): Double = if (cases) l.qty / pack(l.code) else abs(l.net)
+    fun fmt(v: Double): String = if (cases) Fmt.one(v) + " cs" else Fmt.money(v)
+    /** A quantity in eaches, shown as cases when that's on. */
+    fun qty(code: String, eaches: Double): String = if (cases) Fmt.one(eaches / pack(code)) + " cs" else Fmt.qty(eaches)
+}
+
+/** The overview: tiles, chart, credit rate, credits by product, credit lines, promos and voids. Used for all stores or one. */
+@Composable
+private fun SalesOverview(
+    rows: List<Pair<LocalDate, LineRow>>, voids: List<Pair<LocalDate, DocRow>>, promoWeeks: List<Pair<LocalDate, List<PromoWeekLine>>>,
+    range: SalesRange, cases: Boolean, packs: Map<String, Double>, oneStore: Boolean,
+) {
+    val m = Measure(cases, packs)
+    val sales = rows.filter { !it.second.isReturn }
+    val credits = rows.filter { it.second.isReturn }
+    val gross = sales.sumOf { m.of(it.second) }
+    val creditTotal = credits.sumOf { m.of(it.second) }
+    val net = gross - creditTotal
+    // Like Taco-Boys, buy backs are the company's return: they count against net sales but not the credit rate.
+    val creditOnly = credits.filter { !it.second.isBuyback }.sumOf { m.of(it.second) }
+    val rate = if (gross > 0) creditOnly / gross else 0.0
+
+    val tiles: List<@Composable (Modifier) -> Unit> = listOf(
+        { md -> Tile("Net sales", m.fmt(net), md) },
+        { md -> Tile("Gross sales", m.fmt(gross), md) },
+        { md -> Tile("Credits", m.fmt(-creditTotal), md, valueColor = if (creditTotal > 0) C.Red else C.Ink) },
+        if (oneStore) ({ md -> Tile("Visits", rows.map { it.first }.distinct().size.toString(), md) })
+        else ({ md -> Tile("Stores", sales.map { it.second.cusCode }.distinct().size.toString(), md) }),
+    )
+    tiles.chunked(if (LocalWide.current) 4 else 2).forEach { r ->
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { r.forEach { t -> t(Modifier.weight(1f)) } }
+    }
+
+    Panel {
+        if (range == SalesRange.Today && !oneStore) {
+            H2("Net sales by store")
+            val byStore = rows.groupBy { it.second.store }.map { (st, l) -> st to l.sumOf { (if (it.second.isReturn) -1 else 1) * m.of(it.second) } }.sortedByDescending { it.second }
+            BarList(byStore, m::fmt)
+        } else {
+            val weekly = range == SalesRange.Year
+            H2(if (weekly) "Net sales by week" else "Net sales by route day")
+            val signed = { l: List<Pair<LocalDate, LineRow>> -> l.sumOf { (if (it.second.isReturn) -1 else 1) * m.of(it.second) } }
+            val buckets = if (weekly) rows.groupBy { Periods.weekStart(it.first) }.toSortedMap().map { (d, l) -> d.format(Fmt.md) to signed(l) }
+                else rows.groupBy { it.first }.toSortedMap().map { (d, l) -> d.format(Fmt.md) to signed(l) }
+            BarChart(buckets, m::fmt)
+        }
+    }
+
+    // Credit rate, Taco-Boys style (dollars, or units in Cases view like Taco-Boys' unit credit rate)
+    Panel {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f)) {
+                H2("Credit rate")
+                Muted("Credits as a share of gross sales: ${m.fmt(creditOnly)} of ${m.fmt(gross)}" + if (creditOnly != creditTotal) " (buy backs left out)." else ".", 14)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(pct(rate), fontSize = 32.sp, fontWeight = FontWeight.ExtraBold, color = bandColor(rate))
+                Text(bandLabel(rate), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = bandColor(rate))
+            }
+        }
+        RateMeter(rate)
+
+        if (range != SalesRange.Today && range != SalesRange.Week) {
+            HorizontalDivider(color = C.Divider)
+            Text("Week to week", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            val weeks = rows.groupBy { Periods.weekStart(it.first) }.toSortedMap().map { (wk, l) ->
+                val g = l.filter { !it.second.isReturn }.sumOf { m.of(it.second) }
+                val c = l.filter { it.second.isReturn && !it.second.isBuyback }.sumOf { m.of(it.second) }
+                Triple("${wk.format(Fmt.md)} – ${wk.plusDays(6).format(Fmt.md)}", if (g > 0) c / g else 0.0, c)
+            }
+            val top = max(weeks.maxOfOrNull { it.second } ?: 0.0, ELEVATED)
+            weeks.forEach { (label, r, _) ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(label, fontSize = 14.sp, modifier = Modifier.width(118.dp))
+                    Box(Modifier.weight(1f).height(18.dp).clip(RoundedCornerShape(4.dp)).background(C.Ground)) {
+                        Box(Modifier.fillMaxHeight().fillMaxWidth((r / top).toFloat().coerceIn(0.01f, 1f)).background(bandColor(r)))
+                    }
+                    Text(pct(r), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = bandColor(r), textAlign = TextAlign.End, modifier = Modifier.width(72.dp))
+                }
+            }
+        }
+    }
+
+    // Credits added up by product over the whole window (buy backs listed apart).
+    if (credits.isNotEmpty()) Panel {
+        H2("Credits by product")
+        Muted("Added up over this window, biggest first.", 13)
+        val w = if (cases) listOf(3.2f, 0.8f, 1.1f) else listOf(3.2f, 0.8f, 1.1f, 1.2f)
+        TableRow(if (cases) listOf("Product", "Times", "Cases") else listOf("Product", "Times", "Eaches", "Credit $"), w, header = true, endAligned = setOf(1, 2, 3))
+        credits.groupBy { it.second.code to it.second.isBuyback }.map { (key, l) ->
+            val (code, buy) = key
+            val each = l.sumOf { it.second.qty }
+            val dollars = l.sumOf { abs(it.second.net) }
+            val label = "$code · ${l.first().second.name}" + if (buy) " (buy back)" else ""
+            (if (cases) listOf(label, l.size.toString(), m.qty(code, each).removeSuffix(" cs"))
+            else listOf(label, l.size.toString(), Fmt.qty(each), Fmt.money(-dollars))) to l.sumOf { m.of(it.second) }
+        }.sortedByDescending { it.second }.forEach { (cells, _) ->
+            HorizontalDivider(color = C.Divider)
+            TableRow(cells, w, bold = setOf(2, 3), endAligned = setOf(1, 2, 3), small = setOf(0), color = C.Ink)
+        }
+
+        HorizontalDivider(color = C.Divider)
+        var showCredits by remember { mutableStateOf(false) }
+        Expander("Every credit line", "${credits.size}", showCredits) { showCredits = !showCredits }
+        if (showCredits) {
+            credits.sortedByDescending { it.first }.forEach { (d, l) ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+                    Text(
+                        "${d.format(Fmt.md)} · " + (if (oneStore) "" else "${l.store} · ") + "${l.code} ${l.name} · ${m.qty(l.code, l.qty)}" + if (l.isBuyback) " · buy back" else "",
+                        fontSize = 14.sp, modifier = Modifier.weight(1f),
+                    )
+                    Text(if (cases) "" else Fmt.money(-abs(l.net)), fontSize = 14.sp, color = C.Red, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+
+    if (promoWeeks.isNotEmpty()) {
+        Panel {
+            H2("Promotions in this window")
+            Muted("What was on sale each Sat–Fri week, for the banners on your route.", 13)
+            promoWeeks.forEach { (wk, lines) ->
+                HorizontalDivider(color = C.Divider)
+                Text("Week of ${wk.format(Fmt.full)}", fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp))
+                lines.forEach { l ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                        Text("${l.banner} — ${l.type}", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        Text("${l.coverage} · ${l.codes.joinToString(", ")}", fontSize = 14.sp, color = C.Muted)
+                    }
+                }
+            }
+        }
+    }
+
+    if (voids.isNotEmpty()) {
+        Panel {
+            var showVoids by remember { mutableStateOf(false) }
+            Expander("Voided tickets (not counted)", "${voids.size}", showVoids) { showVoids = !showVoids }
+            if (showVoids) voids.forEach { (d, doc) ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+                    Text("${d.format(Fmt.md)} · ${doc.store}" + if (doc.voidReason.isNotEmpty()) " · ${doc.voidReason}" else "", fontSize = 14.sp, color = C.Muted, modifier = Modifier.weight(1f))
+                    Text(Fmt.money(doc.net), fontSize = 14.sp, color = C.Muted)
+                }
+            }
+        }
+    }
+}
+
+private class StoreTotal(val cus: String, val name: String, val gross: Double, val credits: Double, val creditsNoBuyback: Double, val visits: Int)
 
 @Composable
 private fun RangeMenu(range: SalesRange, onPick: (SalesRange) -> Unit) {
@@ -425,11 +501,11 @@ private fun BarList(items: List<Pair<String, Double>>, fmt: (Double) -> String) 
 
 /** Vertical bars over time with the total for the biggest bar and every label that fits. */
 @Composable
-private fun BarChart(items: List<Pair<String, Double>>) {
+private fun BarChart(items: List<Pair<String, Double>>, fmt: (Double) -> String = Fmt::money) {
     if (items.isEmpty()) return
     val top = items.maxOf { it.second }.takeIf { it > 0 } ?: 1.0
     val every = max(1, (items.size + 13) / 14) // at most ~14 labels
-    Muted("Tallest bar ${Fmt.money(top)} · average ${Fmt.money(items.sumOf { it.second } / items.size)}", 13)
+    Muted("Tallest bar ${fmt(top)} · average ${fmt(items.sumOf { it.second } / items.size)}", 13)
     Row(Modifier.fillMaxWidth().height(170.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         items.forEach { (_, value) ->
             Box(
