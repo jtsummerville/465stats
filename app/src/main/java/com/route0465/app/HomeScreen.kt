@@ -154,7 +154,7 @@ private fun ResultCard(r: ImportResult?, onUseBefore: () -> Unit, go: (Screen) -
         null -> {}
         is ImportResult.Imported -> Banner(
             "Read ${r.source}, dated today.\n" +
-                "${r.stores} stores · ${r.saleLines} sale lines · ${r.creditLines} credit lines · ${r.voids} voided tickets · ${r.stockItems} stock items\n" +
+                "${r.stores} stores · ${r.saleLines} sale lines · ${r.creditLines} credit lines · ${r.stockItems} stock items\n" +
                 "Tickets read ${r.ticketsRead}, kept ${r.ticketsRead - r.ticketsDropped}, dropped ${r.ticketsDropped} from other dates.\n" +
                 "Pay ${Fmt.money(r.pay)} · Net sales ${Fmt.money(r.netSales)}" +
                 if (r.missingRates.isNotEmpty()) "\nNo rates for ${r.missingRates.size} products: ${r.missingRates.joinToString(", ")}" else "",

@@ -136,7 +136,6 @@ fun SalesScreen(v: Int) {
     val packs = remember(v) { repo.casePacks() }
     var storeOpen by rememberSaveable { mutableStateOf("") }
     val rows = remember(v, range, back, freight) { repo.linesBetween(from, to) }
-    val voids = remember(v, range, back, freight) { repo.voidsBetween(from, to) }
     // Visit averages need a few weeks: the window itself, or the 4 weeks ending with it when it's shorter.
     val firstImport = remember(v) { repo.days().minOfOrNull { it.date } }
     val visitStart = if (java.time.temporal.ChronoUnit.DAYS.between(from, to) >= 27) from else to.minusDays(27)
@@ -238,7 +237,7 @@ fun SalesScreen(v: Int) {
                 Muted(if (range == SalesRange.Today && back == 0) "Sales show up after today's End of Day import. Use the ‹ arrow to look at earlier days." else "Use the arrows to look at another ${range.unit}, or pick a different window.")
             }
         } else if (view == 0) {
-            SalesOverview(rows, voids, promoWeeks, range, cases, packs, oneStore = false, visits = visitBasis)
+            SalesOverview(rows, promoWeeks, range, cases, packs, oneStore = false, visits = visitBasis)
         } else {
             val m = Measure(cases, packs)
             val selected = storeOpen.takeIf { sel -> sel.isNotEmpty() && rows.any { it.second.cusCode == sel } }
@@ -252,7 +251,7 @@ fun SalesScreen(v: Int) {
                     )
                     Text(sRows.first().second.store, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
                 }
-                SalesOverview(sRows, voids.filter { it.second.cusCode == selected }, emptyList(), range, cases, packs, oneStore = true, visits = visitBasis, store = selected)
+                SalesOverview(sRows, emptyList(), range, cases, packs, oneStore = true, visits = visitBasis, store = selected)
                 Panel {
                     H2("Products")
                     // Cases view: sold and credited in cases. Dollars view: eaches and dollars for each.
@@ -331,10 +330,10 @@ private class Measure(val cases: Boolean, val packs: Map<String, Double>) {
     fun qty(code: String, eaches: Double): String = if (cases) Fmt.one(eaches / pack(code)) + " cs" else Fmt.qty(eaches)
 }
 
-/** The overview: tiles, chart, credit rate, credits by product, credit lines, promos and voids. Used for all stores or one. */
+/** The overview: tiles, chart, credit rate, credits by product, credit lines and promos. Used for all stores or one. */
 @Composable
 private fun SalesOverview(
-    rows: List<Pair<LocalDate, LineRow>>, voids: List<Pair<LocalDate, DocRow>>, promoWeeks: List<Pair<LocalDate, List<PromoWeekLine>>>,
+    rows: List<Pair<LocalDate, LineRow>>, promoWeeks: List<Pair<LocalDate, List<PromoWeekLine>>>,
     range: SalesRange, cases: Boolean, packs: Map<String, Double>, oneStore: Boolean,
     visits: VisitBasis, store: String? = null,
 ) {
@@ -457,19 +456,6 @@ private fun SalesOverview(
                         Text("${l.banner} — ${l.type}", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                         Text("${l.coverage} · ${l.codes.joinToString(", ")}", fontSize = 14.sp, color = C.Muted)
                     }
-                }
-            }
-        }
-    }
-
-    if (voids.isNotEmpty()) {
-        Panel {
-            var showVoids by remember { mutableStateOf(false) }
-            Expander("Voided tickets (not counted)", "${voids.size}", showVoids) { showVoids = !showVoids }
-            if (showVoids) voids.forEach { (d, doc) ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
-                    Text("${d.format(Fmt.md)} · ${doc.store}" + if (doc.voidReason.isNotEmpty()) " · ${doc.voidReason}" else "", fontSize = 14.sp, color = C.Muted, modifier = Modifier.weight(1f))
-                    Text(Fmt.money(doc.net), fontSize = 14.sp, color = C.Muted)
                 }
             }
         }
