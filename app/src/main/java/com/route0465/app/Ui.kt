@@ -105,10 +105,11 @@ fun H2(text: String) = Text(text, fontSize = 19.sp, fontWeight = FontWeight.Bold
 fun Muted(text: String, size: Int = 15) = Text(text, fontSize = size.sp, color = C.Muted, lineHeight = (size + 7).sp)
 
 @Composable
-fun Tile(label: String, value: String, modifier: Modifier = Modifier, valueColor: Color = C.Ink, onClick: (() -> Unit)? = null) {
+fun Tile(label: String, value: String, modifier: Modifier = Modifier, valueColor: Color = C.Ink, sub: String? = null, onClick: (() -> Unit)? = null) {
     Panel(modifier, onClick = onClick) {
         Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = C.Muted)
         Text(value, fontSize = 30.sp, fontWeight = FontWeight.ExtraBold, color = valueColor)
+        if (sub != null) Text(sub, fontSize = 12.sp, color = C.Muted)
     }
 }
 

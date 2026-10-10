@@ -137,6 +137,10 @@ fun SalesScreen(v: Int) {
     var storeOpen by rememberSaveable { mutableStateOf("") }
     val rows = remember(v, range, back, freight) { repo.linesBetween(from, to) }
     val voids = remember(v, range, back, freight) { repo.voidsBetween(from, to) }
+    // Visit averages need a few weeks: the window itself, or the 4 weeks ending with it when it's shorter.
+    val visitFrom = if (java.time.temporal.ChronoUnit.DAYS.between(from, to) >= 27) from else to.minusDays(27)
+    val visitRows = remember(v, range, back, freight) { if (visitFrom == from) null else repo.linesBetween(visitFrom, to) }
+    val visitBasis = VisitBasis(visitFrom, to, visitRows)
     val promoWeeks = remember(v, range, back, freight) { promosByWeek(repo.promosV2(), bannersFor(repo.stores().map { it.second }).toSet(), from, to) }
     val sales = rows.filter { !it.second.isReturn }
     val credits = rows.filter { it.second.isReturn }
@@ -231,7 +235,7 @@ fun SalesScreen(v: Int) {
                 Muted(if (range == SalesRange.Today && back == 0) "Sales show up after today's End of Day import. Use the ‹ arrow to look at earlier days." else "Use the arrows to look at another ${range.unit}, or pick a different window.")
             }
         } else if (view == 0) {
-            SalesOverview(rows, voids, promoWeeks, range, cases, packs, oneStore = false)
+            SalesOverview(rows, voids, promoWeeks, range, cases, packs, oneStore = false, visits = visitBasis)
         } else {
             val m = Measure(cases, packs)
             val selected = storeOpen.takeIf { sel -> sel.isNotEmpty() && rows.any { it.second.cusCode == sel } }
@@ -245,7 +249,7 @@ fun SalesScreen(v: Int) {
                     )
                     Text(sRows.first().second.store, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
                 }
-                SalesOverview(sRows, voids.filter { it.second.cusCode == selected }, emptyList(), range, cases, packs, oneStore = true)
+                SalesOverview(sRows, voids.filter { it.second.cusCode == selected }, emptyList(), range, cases, packs, oneStore = true, visits = visitBasis, store = selected)
                 Panel {
                     H2("Products")
                     // Cases view: sold and credited in cases. Dollars view: eaches and dollars for each.
@@ -299,6 +303,22 @@ fun SalesScreen(v: Int) {
     }
 }
 
+/**
+ * Visit averages. A visit is a store on a day with at least one ticket that wasn't voided.
+ * Averaged over the window, or over the 4 weeks ending with it when the window is shorter ([rows] = null means the window itself).
+ */
+class VisitBasis(val from: LocalDate, val to: LocalDate, private val rows: List<Pair<LocalDate, LineRow>>?) {
+    private val days get() = (java.time.temporal.ChronoUnit.DAYS.between(from, to) + 1).coerceAtLeast(1)
+    fun count(windowRows: List<Pair<LocalDate, LineRow>>, store: String?): Int =
+        (rows ?: windowRows).filter { store == null || it.second.cusCode == store }.map { it.first to it.second.cusCode }.distinct().size
+    fun perWeek(windowRows: List<Pair<LocalDate, LineRow>>, store: String?) = count(windowRows, store) * 7.0 / days
+    fun perMonth(windowRows: List<Pair<LocalDate, LineRow>>, store: String?) = count(windowRows, store) * 30.44 / days
+    fun note(windowRows: List<Pair<LocalDate, LineRow>>, store: String?): String {
+        val n = count(windowRows, store)
+        return "$n visit" + (if (n == 1) "" else "s") + if (rows != null) " in the last 4 weeks" else " in this window"
+    }
+}
+
 /** Turns a line into dollars or cases. Cases = eaches ÷ the product's case size (1 when it's unknown). */
 private class Measure(val cases: Boolean, val packs: Map<String, Double>) {
     fun pack(code: String) = packs[code.uppercase()]?.takeIf { it > 0 } ?: 1.0
@@ -313,6 +333,7 @@ private class Measure(val cases: Boolean, val packs: Map<String, Double>) {
 private fun SalesOverview(
     rows: List<Pair<LocalDate, LineRow>>, voids: List<Pair<LocalDate, DocRow>>, promoWeeks: List<Pair<LocalDate, List<PromoWeekLine>>>,
     range: SalesRange, cases: Boolean, packs: Map<String, Double>, oneStore: Boolean,
+    visits: VisitBasis, store: String? = null,
 ) {
     val m = Measure(cases, packs)
     val sales = rows.filter { !it.second.isReturn }
@@ -328,8 +349,10 @@ private fun SalesOverview(
         { md -> Tile("Net sales", m.fmt(net), md) },
         { md -> Tile("Gross sales", m.fmt(gross), md) },
         { md -> Tile("Credits", m.fmt(-creditTotal), md, valueColor = if (creditTotal > 0) C.Red else C.Ink) },
-        if (oneStore) ({ md -> Tile("Visits", rows.map { it.first }.distinct().size.toString(), md) })
+        if (oneStore) ({ md -> Tile("Visits", rows.map { it.first }.distinct().size.toString(), md, sub = "in this window") })
         else ({ md -> Tile("Stores", sales.map { it.second.cusCode }.distinct().size.toString(), md) }),
+        { md -> Tile("Visits a week", Fmt.one(visits.perWeek(rows, store)), md, sub = visits.note(rows, store)) },
+        { md -> Tile("Visits a month", Fmt.one(visits.perMonth(rows, store)), md, sub = if (oneStore) "average" else "all stores, average") },
     )
     tiles.chunked(if (LocalWide.current) 4 else 2).forEach { r ->
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { r.forEach { t -> t(Modifier.weight(1f)) } }
