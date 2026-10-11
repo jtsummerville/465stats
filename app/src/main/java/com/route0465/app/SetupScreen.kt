@@ -274,6 +274,7 @@ private fun FolderSection(v: Int, bump: () -> Unit, back: () -> Unit) {
     var editing by remember { mutableStateOf(false) }
     var path by remember { mutableStateOf(Prefs.xsalesPath(ctx)) }
     var folders by remember { mutableStateOf<List<java.io.File>?>(null) }
+    var backups by remember { mutableStateOf<List<String>?>(null) }
 
     ScreenColumn {
         SectionTop("XSales folder", back)
@@ -303,6 +304,15 @@ private fun FolderSection(v: Int, bump: () -> Unit, back: () -> Unit) {
                 onCancel = { editing = false },
                 onSave = { Prefs.setXsalesPath(ctx, path); editing = false; bump() },
             )
+        }
+        // Troubleshooting: what backups XSales has saved, and their dates. Reads only; changes nothing.
+        Panel {
+            H2("Check XSales backups")
+            Muted("If an import won't go through, this shows each XSales folder, which one is used, and the date inside each backup.", 14)
+            SecondaryButton("Check now") {
+                scope.launch { backups = withContext(Dispatchers.IO) { describeBackups(ctx, LocalDate.now()) } }
+            }
+            backups?.forEach { line -> Muted(line, 14) }
         }
     }
 }

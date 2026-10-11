@@ -46,7 +46,6 @@ fun HomeScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
     var result by remember { mutableStateOf<ImportResult?>(null) }
     var busy by remember { mutableStateOf(false) }
     var auto by remember { mutableStateOf(Prefs.auto(ctx)) }
-    var backups by remember { mutableStateOf<List<String>?>(null) }
     val access = remember(v) { XSales.hasAccess(ctx) }
     val askStorage = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { bump() }
     val days = remember(v) { repo.days() }
@@ -112,12 +111,6 @@ fun HomeScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                         )
                     }
                 }
-                SecondaryButton("Check XSales backups") {
-                    scope.launch {
-                        backups = withContext(Dispatchers.IO) { describeBackups(ctx, today) }
-                    }
-                }
-                backups?.forEach { line -> Muted(line, 14) }
             }
 
             Column(Modifier.part(1f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
