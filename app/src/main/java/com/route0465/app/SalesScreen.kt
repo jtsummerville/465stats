@@ -121,7 +121,7 @@ fun SalesScreen(v: Int) {
     val ctx = LocalContext.current
     val repo = remember { Db.get(ctx) }
     val today = LocalDate.now()
-    var range by rememberSaveable { mutableStateOf(SalesRange.Today) }
+    var range by rememberSaveable { mutableStateOf(SalesRange.Week) }
     var back by rememberSaveable { mutableStateOf(0) }
     var picking by remember { mutableStateOf(false) }
     var view by rememberSaveable { mutableStateOf(0) }
@@ -369,9 +369,20 @@ private fun SalesOverview(
             val weekly = range == SalesRange.Year
             H2(if (weekly) "Net sales by week" else "Net sales by route day")
             val signed = { l: List<Pair<LocalDate, LineRow>> -> l.sumOf { (if (it.second.isReturn) -1 else 1) * m.of(it.second) } }
-            val buckets = if (weekly) rows.groupBy { Periods.weekStart(it.first) }.toSortedMap().map { (d, l) -> d.format(Fmt.md) to signed(l) }
-                else rows.groupBy { it.first }.toSortedMap().map { (d, l) -> d.format(Fmt.md) to signed(l) }
-            BarChart(buckets, m::fmt)
+            if (weekly) {
+                val buckets = rows.groupBy { Periods.weekStart(it.first) }.toSortedMap().map { (d, l) -> d.format(Fmt.md) to signed(l) }
+                BarChart(buckets, m::fmt)
+            } else {
+                // One slice per route day (weekday), Monday first; colour belongs to the weekday, never its rank.
+                val byDow = rows.groupBy { it.first.dayOfWeek }.toSortedMap()
+                val slices = byDow.map { (dow, l) ->
+                    val dates = l.map { it.first }.distinct().sorted()
+                    val name = dow.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.US)
+                    val label = if (dates.size == 1) "$name ${dates[0].format(Fmt.md)}" else "$name (${dates.size} days)"
+                    PieSlice(label, signed(l), DAY_COLORS[dow.value - 1])
+                }
+                PieChart(slices, m::fmt)
+            }
         }
     }
 
@@ -507,6 +518,72 @@ private fun BarList(items: List<Pair<String, Double>>, fmt: (Double) -> String) 
                 Box(Modifier.fillMaxHeight().fillMaxWidth((value / top).toFloat().coerceIn(0.01f, 1f)).background(C.Green))
             }
             Text(fmt(value), fontSize = 14.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.width(96.dp))
+        }
+    }
+}
+
+private class PieSlice(val label: String, val value: Double, val color: Color)
+
+// Fixed colour per weekday, Mon..Sun (validated categorical order, colourblind-checked).
+private val DAY_COLORS = listOf(
+    Color(0xFF2A78D6), Color(0xFFEB6834), Color(0xFF1BAF7A), Color(0xFFEDA100),
+    Color(0xFFE87BA4), Color(0xFF008300), Color(0xFF6250D6),
+)
+
+/** Donut chart with a legend giving each slice's value and share. Negative nets get no slice but stay in the legend. */
+@Composable
+private fun PieChart(items: List<PieSlice>, fmt: (Double) -> String = Fmt::money) {
+    if (items.isEmpty()) return
+    val total = items.sumOf { max(0.0, it.value) }
+    val donut = @Composable {
+        Box(Modifier.size(190.dp), contentAlignment = Alignment.Center) {
+            androidx.compose.foundation.Canvas(Modifier.size(190.dp)) {
+                val stroke = size.minDimension * 0.22f
+                val inset = stroke / 2
+                val arcSize = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke)
+                val topLeft = androidx.compose.ui.geometry.Offset(inset, inset)
+                if (total <= 0) {
+                    drawArc(C.Line, 0f, 360f, false, topLeft, arcSize, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
+                    return@Canvas
+                }
+                val shown = items.filter { it.value > 0 }
+                val gap = if (shown.size > 1) 1.6f else 0f
+                var start = -90f
+                shown.forEach { sl ->
+                    val sweep = (sl.value / total * 360).toFloat()
+                    drawArc(sl.color, start + gap / 2, max(0.5f, sweep - gap), false, topLeft, arcSize,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
+                    start += sweep
+                }
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(fmt(items.sumOf { it.value }), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = C.Ink)
+                Text("net", fontSize = 12.sp, color = C.Muted)
+            }
+        }
+    }
+    val legend = @Composable { mod: Modifier ->
+        Column(mod, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items.forEach { sl ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(12.dp).clip(RoundedCornerShape(3.dp)).background(sl.color))
+                    Text(sl.label, fontSize = 14.sp, color = C.Ink, modifier = Modifier.padding(start = 8.dp).weight(1f))
+                    Text(fmt(sl.value), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = C.Ink)
+                    val pct = if (total > 0 && sl.value > 0) Math.round(sl.value / total * 100).toString() + "%" else "—"
+                    Text(pct, fontSize = 13.sp, color = C.Muted, textAlign = TextAlign.End, modifier = Modifier.width(48.dp))
+                }
+            }
+        }
+    }
+    if (LocalWide.current) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            donut()
+            legend(Modifier.weight(1f))
+        }
+    } else {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            donut()
+            legend(Modifier.fillMaxWidth())
         }
     }
 }

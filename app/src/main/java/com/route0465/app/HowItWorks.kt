@@ -71,7 +71,8 @@ val HOW_TOPICS: List<HowTopic> = listOf(
     HowTopic(
         "sales", "Sales", "Ranges, credit rate and promo weeks",
         listOf(
-            "Ranges" to "Day, Week (Sat–Fri), 2 weeks, 4 weeks, Month and Year to date. The arrows step one range back or forward; Pick a date jumps to the range holding that day.",
+            "Ranges" to "Day, Week (Sat–Fri), 2 weeks, 4 weeks, Month and Year to date. The arrows step one range back or forward; Pick a date jumps to the range holding that day. Sales opens on Week.",
+            "Net sales by route day" to "A donut with one slice per weekday you ran, each weekday always the same colour. On Week each slice is that day; on longer ranges a slice adds up every Monday (or Tuesday…) in the range. The legend gives each day's net and its share. A day that netted below zero gets no slice but stays in the legend. Year shows net sales by week as bars.",
             "2 and 4 weeks" to "Counted back from the end of the current Sat–Fri week, in whole weeks.",
             "Sales and credits" to "Sales are the dollars on sales tickets; credits are the dollars on return tickets and damage returns. Net = sales − credits. Voided tickets are left out completely and not shown.",
             "Dollars or cases" to "The Dollars / Cases switch flips every Sales number. Dollars are what the stores were invoiced. Cases are eaches ÷ that product's case size (from XSales, or your own in Setup › Stores and products). In Cases the credit rate is credited cases ÷ cases sold, like Taco-Boys' unit credit rate. The math underneath is always in eaches.",
