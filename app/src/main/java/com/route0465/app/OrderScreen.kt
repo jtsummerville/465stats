@@ -62,6 +62,8 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
     val cycle = orderCycle()
     val promos = remember(v) { promoTags(repo.promosV2(), bannersFor(repo.stores().map { it.second }).toSet() - ALL_BANNERS, cycle) }
     var promoInfo by remember { mutableStateOf<Pair<String, PromoTag>?>(null) }
+    // Tap a product's code or name: last year's sales around this delivery pop up.
+    var lookback by remember { mutableStateOf<OrderItem?>(null) }
     val onHandU = remember(onHand) { onHand.mapKeys { it.key.uppercase() } }
     val sugg = remember(v) { Suggest.compute(repo, items, onHandU, stockDate, cycle.first) }
     // Ran short last delivery, and by how many cases (Taco-Boys "Ran short / Short by").
@@ -174,8 +176,8 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                             Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            Text(item.code, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, color = C.Ink, modifier = Modifier.width(70.dp))
-                            Column(Modifier.weight(1f)) {
+                            Text(item.code, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, color = C.Ink, modifier = Modifier.width(70.dp).clickable { lookback = item })
+                            Column(Modifier.weight(1f).clickable { lookback = item }) {
                                 Text(item.name.ifEmpty { item.code }, fontSize = 15.sp, fontWeight = FontWeight.Normal, maxLines = 2)
                                 Muted("On hand ${onHand[item.code]?.let { c -> Fmt.one(c) } ?: "0.0"} cs", 13)
                             }
@@ -255,6 +257,9 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
             },
             confirmButton = { TextButton(onClick = { promoInfo = null }) { Text("OK") } },
         )
+    }
+    lookback?.let { item ->
+        LastYearDialog(repo, item.code, item.name.ifEmpty { item.code }, cycle.first, sugg[item.code]?.weekly?.takeIf { sugg[item.code]?.cases != null }) { lookback = null }
     }
     if (confirmClear) {
         ConfirmDialog("Clear all quantities?", "Sets every product back to 0 cases and clears the Ran short marks, ready for next week's order.", "Clear",

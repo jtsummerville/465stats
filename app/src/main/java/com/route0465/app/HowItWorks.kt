@@ -107,6 +107,7 @@ val HOW_TOPICS: List<HowTopic> = listOf(
     HowTopic(
         "order", "Order guide and Suggested", "Deadline, delivery, suggestion, flags and ran short",
         listOf(
+            "Last year (tap a product)" to "Tap a product's code or name on the Order screen. A card shows what it sold a year ago, all stores, in cases: the Sat–Fri week holding the same delivery 52 weeks back (so weekdays line up), then the average a week over 2 weeks and over 4 weeks from there. Only weeks with at least one import count toward an average, and it says when weeks are missing. Under that, this year's average a week over the last 4 weeks, and any promos on that product during those 4 weeks a year ago. It fills in once the app has a year of imports.",
             "Order deadline" to "Wednesday by midnight (today, if today is Wednesday).",
             "Which delivery" to "Ole places the order Thursday; it's delivered the Tuesday after. That delivery runs until the next Tuesday's delivery, and that week is what promo tags and Suggested aim at.",
             "Weekly rate" to "Units sold per product over the last 4 full Sat–Fri weeks that have imported sales, ÷ case pack, ÷ the number of those weeks.",
