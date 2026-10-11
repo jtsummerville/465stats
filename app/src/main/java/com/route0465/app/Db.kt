@@ -41,6 +41,8 @@ data class LineRow(
     val isReturn: Boolean,
     /** A buy back (company's return): counted with returns, but costs commission only and stays out of the credit rate. */
     val isBuyback: Boolean = false,
+    /** XSales return reason name (e.g. Damaged, Out of date); blank on sales and on lines imported before build 65. */
+    val reason: String = "",
 )
 
 data class StockRow(
@@ -137,6 +139,8 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
             val cols = db.list("PRAGMA table_info($t)") { it.getString(1) }
             if ("buyback" !in cols) db.execSQL("ALTER TABLE $t ADD COLUMN buyback INTEGER DEFAULT 0")
         }
+        // Return reason per credit line (build 65+).
+        if ("reason" !in db.list("PRAGMA table_info(lines)") { it.getString(1) }) db.execSQL("ALTER TABLE lines ADD COLUMN reason TEXT DEFAULT ''")
         // Stores and products you change yourself: manual = keep your version over XSales', hidden = removed by you.
         for (t in listOf("stores", "products")) {
             val cols = db.list("PRAGMA table_info($t)") { it.getString(1) }
@@ -207,7 +211,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
     fun lines(date: LocalDate): List<LineRow> = readableDatabase.list(
         "SELECT * FROM lines WHERE date=?", arrayOf(date.toString())
     ) { c ->
-        LineRow(c.s("dmd_code"), c.s("cus_code"), c.s("store"), c.s("code"), c.s("name"), c.d("qty"), c.d("price"), c.d("net"), c.i("is_return") == 1, c.i("buyback") == 1)
+        LineRow(c.s("dmd_code"), c.s("cus_code"), c.s("store"), c.s("code"), c.s("name"), c.d("qty"), c.d("price"), c.d("net"), c.i("is_return") == 1, c.i("buyback") == 1, c.s("reason"))
     }
 
     /** Every sale and credit line from tickets that weren't voided, for days from..to (inclusive). */
@@ -217,7 +221,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
         arrayOf(from.toString(), to.toString())
     ) { c ->
         LocalDate.parse(c.s("date")) to
-            LineRow(c.s("dmd_code"), c.s("cus_code"), c.s("store"), c.s("code"), c.s("name"), c.d("qty"), c.d("price"), c.d("net"), c.i("is_return") == 1, c.i("buyback") == 1)
+            LineRow(c.s("dmd_code"), c.s("cus_code"), c.s("store"), c.s("code"), c.s("name"), c.d("qty"), c.d("price"), c.d("net"), c.i("is_return") == 1, c.i("buyback") == 1, c.s("reason"))
     }
 
     fun voidsBetween(from: LocalDate, to: LocalDate): List<Pair<LocalDate, DocRow>> = readableDatabase.list(

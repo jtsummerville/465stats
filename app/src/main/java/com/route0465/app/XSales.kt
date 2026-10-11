@@ -224,7 +224,7 @@ object XSales {
         val net: Double, val voided: Boolean, val reason: String, val isBuyback: Boolean = false,
     )
 
-    private class Ln(val doc: Doc, val code: String, val name: String, val qty: Double, val price: Double, val net: Double, val isReturn: Boolean, val isBuyback: Boolean = false)
+    private class Ln(val doc: Doc, val code: String, val name: String, val qty: Double, val price: Double, val net: Double, val isReturn: Boolean, val isBuyback: Boolean = false, val reason: String = "")
 
     @Synchronized
     fun runImport(ctx: Context, useBefore: Boolean = false): ImportResult {
@@ -346,7 +346,7 @@ object XSales {
                 val net = r.g("dpnNetAmount")?.toDoubleOrNull()?.takeIf { it != 0.0 } ?: (q * price)
                 val reasonName = (r.g("reaCode")?.let { reasons[it] } ?: "")
                 val buyback = doc.isBuyback || reasonName.trim().equals("Buy Back", ignoreCase = true)
-                lines += Ln(doc, pc, name, q, price, -abs(net), true, buyback)
+                lines += Ln(doc, pc, name, q, price, -abs(net), true, buyback, reasonName.trim())
             }
 
             // Pay: the Taco-Boys commission math, per line, voided tickets excluded.
@@ -393,7 +393,7 @@ object XSales {
                     w.insert("lines", null, ContentValues().apply {
                         put("date", dayStr); put("dmd_code", l.doc.code); put("cus_code", l.doc.cus); put("store", l.doc.store)
                         put("code", l.code); put("name", l.name); put("qty", l.qty); put("price", l.price); put("net", l.net)
-                        put("is_return", if (l.isReturn) 1 else 0); put("buyback", if (l.isBuyback) 1 else 0); put("pay", linePay[i])
+                        put("is_return", if (l.isReturn) 1 else 0); put("buyback", if (l.isBuyback) 1 else 0); put("pay", linePay[i]); put("reason", l.reason)
                     })
                 }
                 stock.forEach { s ->
