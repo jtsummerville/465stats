@@ -18,81 +18,77 @@ import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 
 /**
- * Ordering look-back: tap a product on the Order screen to see what it sold a year ago around the
- * delivery you're ordering for. The year-ago window starts on the Sat–Fri week holding that same delivery,
- * 52 weeks back (so weekdays line up), and covers 1, 2 and 4 weeks. All stores, in cases (eaches ÷ case size).
+ * Ordering look-back: tap a product on the Order screen. Shows cases a week (all stores) over the
+ * prior 2 and prior 4 full Sat–Fri weeks, this year and the same weeks last year (52 weeks back, so
+ * weekdays line up), and whether it was on sale last year during the week you're ordering for.
  */
 @Composable
-fun LastYearDialog(repo: Db, code: String, name: String, delivery: LocalDate, nowWeekly: Double?, onClose: () -> Unit) {
-    val from = Periods.weekStart(delivery).minusWeeks(52)
-    val to4 = from.plusDays(27)
-    val data = remember(code, from) {
+fun LastYearDialog(repo: Db, code: String, name: String, delivery: LocalDate, onClose: () -> Unit) {
+    val today = LocalDate.now()
+    val thisWeek = Periods.weekStart(today)
+    val data = remember(code, thisWeek, delivery) {
         val pack = repo.casePacks()[code.uppercase()]?.takeIf { it > 0 } ?: 1.0
-        val sold = repo.unitsSoldBetween(from, to4).filter { it.second.equals(code, ignoreCase = true) }
-        val imported = repo.days().map { it.date }.filter { !it.isBefore(from) && !it.isAfter(to4) }.toSet()
-        val promos = promosByWeek(repo.promosV2(), bannersFor(repo.stores().map { it.second }).toSet(), from, to4)
-            .sortedBy { it.first }
-            .mapNotNull { (wk, lines) ->
-                lines.filter { l -> l.codes.any { it.equals(code, ignoreCase = true) } }.takeIf { it.isNotEmpty() }?.let { wk to it }
+        val imported = repo.days().map { it.date }.toSet()
+        // Cases a week over the [weeks] full weeks before [start]; only weeks with an import count.
+        fun avg(start: LocalDate, weeks: Int): Pair<Double, Int>? {
+            val from = start.minusWeeks(weeks.toLong())
+            val withData = (0 until weeks).count { w ->
+                val ws = from.plusWeeks(w.toLong())
+                imported.any { !it.isBefore(ws) && !it.isAfter(ws.plusDays(6)) }
             }
-        Triple(pack, sold, imported) to promos
-    }
-    val (pack, sold, imported) = data.first
-    val promos = data.second
-
-    // Cases a week over the first n weeks, counting only weeks that have at least one import.
-    fun avg(weeks: Int): Pair<Double, Int>? {
-        val end = from.plusDays(7L * weeks - 1)
-        val withData = (0 until weeks).count { w ->
-            val ws = from.plusWeeks(w.toLong())
-            imported.any { !it.isBefore(ws) && !it.isAfter(ws.plusDays(6)) }
+            if (withData == 0) return null
+            val eaches = repo.unitsSoldBetween(from, start.minusDays(1)).filter { it.second.equals(code, ignoreCase = true) }.sumOf { it.third }
+            return eaches / pack / withData to withData
         }
-        if (withData == 0) return null
-        val eaches = sold.filter { !it.first.isAfter(end) }.sumOf { it.third }
-        return eaches / pack / withData to withData
+        val lyStart = thisWeek.minusWeeks(52)
+        val grid = listOf(avg(thisWeek, 2), avg(lyStart, 2), avg(thisWeek, 4), avg(lyStart, 4))
+        // The delivery week you're ordering for, a year ago.
+        val lyFrom = delivery.minusWeeks(52)
+        val lyTo = lyFrom.plusDays(6)
+        val banners = bannersFor(repo.stores().map { it.second }).toSet()
+        val sale = repo.promosV2().filter { p ->
+            !(p.end.isBefore(lyFrom) || p.start.isAfter(lyTo)) &&
+                (p.banner == ALL_BANNERS || banners.isEmpty() || p.banner in banners) &&
+                p.items.any { it.equals(code, ignoreCase = true) }
+        }.sortedBy { it.start }
+        Triple(grid, lyFrom to lyTo, sale)
     }
+    val (grid, lyWeek, sale) = data
 
     AlertDialog(
         onDismissRequest = onClose,
-        title = {
-            Column {
-                Text("$code · $name", fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
-                Text("Last year, around this delivery", fontSize = 14.sp, color = C.Muted)
-            }
-        },
+        title = { Text("$code · $name", fontSize = 19.sp, fontWeight = FontWeight.ExtraBold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Starting ${from.format(Fmt.full)} · all stores", fontSize = 13.sp, color = C.Muted)
-                listOf(1 to "Same week", 2 to "2 weeks (avg a week)", 4 to "Month, 4 weeks (avg a week)").forEach { (w, label) ->
-                    HorizontalDivider(color = C.Divider)
-                    val a = avg(w)
-                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Column(Modifier.weight(1f)) {
-                            Text(label, fontSize = 15.sp)
-                            if (a != null && a.second < w) Text("only ${a.second} of $w weeks imported", fontSize = 12.sp, color = C.Amber)
-                        }
-                        Text(a?.let { Fmt.one(it.first) + " cs" } ?: "no data", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold,
-                            color = if (a == null) C.Muted else C.Ink)
-                    }
+                Text("Average cases a week, all stores", fontSize = 13.sp, color = C.Muted)
+                Row(Modifier.fillMaxWidth()) {
+                    Text("", modifier = Modifier.weight(1.3f))
+                    Text("This year", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = C.Muted, textAlign = androidx.compose.ui.text.style.TextAlign.End, modifier = Modifier.weight(1f))
+                    Text("Last year", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = C.Muted, textAlign = androidx.compose.ui.text.style.TextAlign.End, modifier = Modifier.weight(1f))
                 }
-                if (nowWeekly != null) {
+                listOf("Prior 2 weeks" to 2, "Prior 4 weeks" to 4).forEachIndexed { i, (label, w) ->
                     HorizontalDivider(color = C.Divider)
-                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Text("This year, last 4 weeks (avg a week)", fontSize = 15.sp, modifier = Modifier.weight(1f))
-                        Text(Fmt.one(nowWeekly) + " cs", fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
+                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text(label, fontSize = 15.sp, modifier = Modifier.weight(1.3f))
+                        Cell(grid[i * 2], w, Modifier.weight(1f))
+                        Cell(grid[i * 2 + 1], w, Modifier.weight(1f))
                     }
                 }
                 HorizontalDivider(color = C.Divider)
-                Text("On promotion then", fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
-                if (promos.isEmpty()) Text(
-                    if (imported.isEmpty()) "Nothing to compare yet. This fills in once the app has a year of imports." else "No promos on this item in those 4 weeks.",
-                    fontSize = 14.sp, color = C.Muted,
-                )
-                promos.forEach { (wk, lines) ->
-                    lines.forEach { l -> Text("Week of ${wk.format(Fmt.md)}: ${l.banner} — ${l.type} (${l.coverage})", fontSize = 14.sp) }
-                }
+                Text("On sale last year, week you're ordering for", fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
+                Text("${lyWeek.first.format(Fmt.full)} – ${lyWeek.second.format(Fmt.full)}", fontSize = 13.sp, color = C.Muted)
+                if (sale.isEmpty()) Text("No", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                sale.forEach { p -> Text("Yes · ${p.banner} — ${p.type} (${p.start.format(Fmt.md)} – ${p.end.format(Fmt.md)})", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = C.Amber) }
             }
         },
         confirmButton = { TextButton(onClick = onClose) { Text("Close", fontWeight = FontWeight.Bold) } },
     )
+}
+
+@Composable
+private fun Cell(v: Pair<Double, Int>?, weeks: Int, modifier: Modifier) {
+    Column(modifier, horizontalAlignment = androidx.compose.ui.Alignment.End) {
+        Text(v?.let { Fmt.one(it.first) + " cs" } ?: "no data", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = if (v == null) C.Muted else C.Ink)
+        if (v != null && v.second < weeks) Text("${v.second} of $weeks wks", fontSize = 11.sp, color = C.Amber)
+    }
 }

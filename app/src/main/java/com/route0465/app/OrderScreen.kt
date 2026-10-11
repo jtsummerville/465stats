@@ -259,7 +259,7 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
         )
     }
     lookback?.let { item ->
-        LastYearDialog(repo, item.code, item.name.ifEmpty { item.code }, cycle.first, sugg[item.code]?.weekly?.takeIf { sugg[item.code]?.cases != null }) { lookback = null }
+        LastYearDialog(repo, item.code, item.name.ifEmpty { item.code }, cycle.first) { lookback = null }
     }
     if (confirmClear) {
         ConfirmDialog("Clear all quantities?", "Sets every product back to 0 cases and clears the Ran short marks, ready for next week's order.", "Clear",
