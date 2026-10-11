@@ -155,10 +155,13 @@ private fun SalesBrowser(v: Int, storesOnly: Boolean, onBack: () -> Unit) {
 
     var storeOpen by rememberSaveable { mutableStateOf("") }
     val sellers = remember(v, storeOpen, range, back) { if (storeOpen.isEmpty()) emptyMap() else sellsMostAt(repo, to) }
-    BackHandler(enabled = storeOpen.isNotEmpty()) { storeOpen = "" }
+    BackHandler(enabled = storeOpen.isNotEmpty() && view == 1) { storeOpen = "" }
 
     ScreenColumn {
-        BackBar(if (storesOnly) "Stores" else "Dashboard", onBack = onBack)
+        // One Back: from a store to the store list, from the list to the Sales menu.
+        val openName = if (view == 1) rows.firstOrNull { it.second.cusCode == storeOpen }?.second?.store else null
+        if (openName != null) BackBar(openName) { storeOpen = "" }
+        else BackBar(if (storesOnly) "Stores" else "Dashboard", onBack = onBack)
         // ---- Period menu, back/forward arrows, view switch ----
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             RangeMenu(range) { range = it; back = 0 }
@@ -217,13 +220,6 @@ private fun SalesBrowser(v: Int, storesOnly: Boolean, onBack: () -> Unit) {
             if (selected != null) {
                 // ---- One store: the same overview, just for this store, then its products ----
                 val sRows = rows.filter { it.second.cusCode == selected }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text(
-                        "‹  " + (if (storesOnly) "Stores" else "All stores"), color = C.Green, fontWeight = FontWeight.Bold, fontSize = 17.sp,
-                        modifier = Modifier.clickable { storeOpen = "" }.padding(vertical = 10.dp, horizontal = 4.dp),
-                    )
-                    Text(sRows.first().second.store, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
-                }
                 SalesOverview(sRows, emptyList(), range, cases, packs, oneStore = true, visits = visitBasis, store = selected)
                 StoreReturns(sRows, selected, sellers)
                 Panel {
@@ -689,7 +685,7 @@ private fun visitBasisFor(repo: Db, from: LocalDate, to: LocalDate): VisitBasis 
 }
 
 @Composable
-private fun BackBar(title: String, back: String = "Sales", onBack: () -> Unit) {
+private fun BackBar(title: String, back: String = "Back", onBack: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         Text(
             "‹  $back", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 17.sp,
@@ -955,7 +951,7 @@ private fun ReturnsPage(v: Int, buybacks: Boolean, onBack: () -> Unit) {
     val open = storeOpen.takeIf { s -> s.isNotEmpty() && rows.any { it.second.cusCode == s } }
 
     ScreenColumn {
-        if (open != null) BackBar(rows.first { it.second.cusCode == open }.second.store, back = title) { storeOpen = "" }
+        if (open != null) BackBar(rows.first { it.second.cusCode == open }.second.store) { storeOpen = "" }
         else BackBar(title, onBack = onBack)
         Segmented(RETURN_RANGES.map { it.label }, ri, Modifier.fillMaxWidth(), fill = true) { ri = it; back = 0 }
         DateHeader(range.title(today, back).replace("\n", " "), back == 0, from, range.unit) { back = range.backFor(today, it) }
