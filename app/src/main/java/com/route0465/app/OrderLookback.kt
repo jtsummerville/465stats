@@ -42,18 +42,24 @@ fun LastYearDialog(repo: Db, code: String, name: String, delivery: LocalDate, on
         }
         val lyStart = thisWeek.minusWeeks(52)
         val grid = listOf(avg(thisWeek, 2), avg(lyStart, 2), avg(thisWeek, 4), avg(lyStart, 4))
+        val banners = bannersFor(repo.stores().map { it.second }).toSet()
+        val all = repo.promosV2().filter { p ->
+            (p.banner == ALL_BANNERS || banners.isEmpty() || p.banner in banners) && p.items.any { it.equals(code, ignoreCase = true) }
+        }.sortedBy { it.start }
+        fun during(from: LocalDate, to: LocalDate) = all.filter { p -> !(p.end.isBefore(from) || p.start.isAfter(to)) }
+        // Promos inside each average's weeks, so a sale bump isn't mistaken for normal sales.
+        val inAvg = listOf(
+            during(thisWeek.minusWeeks(2), thisWeek.minusDays(1)), during(lyStart.minusWeeks(2), lyStart.minusDays(1)),
+            during(thisWeek.minusWeeks(4), thisWeek.minusDays(1)), during(lyStart.minusWeeks(4), lyStart.minusDays(1)),
+        )
         // The delivery week you're ordering for, a year ago.
         val lyFrom = delivery.minusWeeks(52)
         val lyTo = lyFrom.plusDays(6)
-        val banners = bannersFor(repo.stores().map { it.second }).toSet()
-        val sale = repo.promosV2().filter { p ->
-            !(p.end.isBefore(lyFrom) || p.start.isAfter(lyTo)) &&
-                (p.banner == ALL_BANNERS || banners.isEmpty() || p.banner in banners) &&
-                p.items.any { it.equals(code, ignoreCase = true) }
-        }.sortedBy { it.start }
-        Triple(grid, lyFrom to lyTo, sale)
+        Triple(grid to inAvg, lyFrom to lyTo, during(lyFrom, lyTo))
     }
-    val (grid, lyWeek, sale) = data
+    val (gridAndPromos, lyWeek, sale) = data
+    val (grid, inAvg) = gridAndPromos
+    fun promoText(p: PromoV2) = "${p.banner} ${p.type} ${p.start.format(Fmt.md)}–${p.end.format(Fmt.md)}"
 
     AlertDialog(
         onDismissRequest = onClose,
@@ -72,6 +78,10 @@ fun LastYearDialog(repo: Db, code: String, name: String, delivery: LocalDate, on
                         Text(label, fontSize = 15.sp, modifier = Modifier.weight(1.3f))
                         Cell(grid[i * 2], w, Modifier.weight(1f))
                         Cell(grid[i * 2 + 1], w, Modifier.weight(1f))
+                    }
+                    listOf("This year" to inAvg[i * 2], "Last year" to inAvg[i * 2 + 1]).forEach { (yr, ps) ->
+                        if (ps.isNotEmpty()) Text("On sale in these weeks ($yr): " + ps.joinToString("; ") { promoText(it) },
+                            fontSize = 12.sp, color = C.Amber, fontWeight = FontWeight.SemiBold)
                     }
                 }
                 HorizontalDivider(color = C.Divider)
