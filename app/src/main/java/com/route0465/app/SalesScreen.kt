@@ -117,7 +117,7 @@ private fun bandLabel(rate: Double): String = when {
 
 private fun pct(r: Double) = String.format(java.util.Locale.US, "%.2f%%", r * 100)
 
-/** History (every range, Overview or By store) and Stores (always By store). Freight weeks have their own page. */
+/** Dashboard (every range, Overview or By store) and Stores (always By store). Freight weeks have their own page. */
 @Composable
 private fun SalesBrowser(v: Int, storesOnly: Boolean, onBack: () -> Unit) {
     val ctx = LocalContext.current
@@ -158,11 +158,10 @@ private fun SalesBrowser(v: Int, storesOnly: Boolean, onBack: () -> Unit) {
     BackHandler(enabled = storeOpen.isNotEmpty()) { storeOpen = "" }
 
     ScreenColumn {
-        BackBar(if (storesOnly) "Stores" else "History", onBack = onBack)
+        BackBar(if (storesOnly) "Stores" else "Dashboard", onBack = onBack)
         // ---- Period menu, back/forward arrows, view switch ----
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             RangeMenu(range) { range = it; back = 0 }
-            SalesArrow(left = true) { back += 1 }
             // Tap the date to pick any day, week, month or year from a calendar.
             Column(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).clickable { picking = true }.padding(horizontal = 6.dp, vertical = 4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -171,7 +170,6 @@ private fun SalesBrowser(v: Int, storesOnly: Boolean, onBack: () -> Unit) {
                 }
                 Muted("${routeDays.size} route day" + (if (routeDays.size == 1) "" else "s") + " · tap the date to change it", 13)
             }
-            SalesArrow(left = false, enabled = back > 0) { back -= 1 }
         }
         if (back > 0) Text(
             "Back to the current ${range.unit}", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 15.sp,
@@ -643,7 +641,7 @@ fun SalesScreen(v: Int) {
     BackHandler(enabled = page != "menu") { page = "menu" }
     val toMenu = { page = "menu" }
     when (page) {
-        "pay" -> PayWeekPage(v, toMenu)
+        "pay" -> PayPeriodPage(v, toMenu)
         "freight" -> FreightWeekPage(v, toMenu)
         "stores" -> SalesBrowser(v, storesOnly = true, onBack = toMenu)
         "credits" -> ReturnsPage(v, buybacks = false, onBack = toMenu)
@@ -701,21 +699,51 @@ private fun BackBar(title: String, back: String = "Sales", onBack: () -> Unit) {
     }
 }
 
-/** ‹ title › with the forward arrow off on the current period. */
+/** The period's dates; tap them to pick any day from a calendar and jump to the period holding it. */
 @Composable
-private fun StepHeader(title: String, back: Int, onStep: (Int) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        SalesArrow(left = true) { onStep(back + 1) }
-        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-            if (back > 0) Text("Back to now", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 14.sp,
-                modifier = Modifier.clickable { onStep(0) }.padding(top = 2.dp))
+private fun DateHeader(title: String, current: Boolean, initial: LocalDate, what: String, onPick: (LocalDate) -> Unit) {
+    var picking by remember { mutableStateOf(false) }
+    val today = LocalDate.now()
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color.White).border(1.dp, C.Line, RoundedCornerShape(12.dp))
+            .clickable { picking = true }.padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Icon(Icons.Default.DateRange, contentDescription = "Pick a date", tint = C.Green, modifier = Modifier.size(24.dp))
         }
-        SalesArrow(left = false, enabled = back > 0) { onStep(back - 1) }
+        Muted("Tap to pick another $what from the calendar", 13)
+    }
+    if (!current) Text(
+        "Back to the current $what", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 15.sp,
+        modifier = Modifier.clickable { onPick(today) }.padding(vertical = 4.dp),
+    )
+    if (picking) {
+        val todayMillis = today.toEpochDay() * 86_400_000L
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = initial.toEpochDay() * 86_400_000L,
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long) = utcTimeMillis <= todayMillis
+                override fun isSelectableYear(year: Int) = year <= today.year
+            },
+        )
+        DatePickerDialog(
+            onDismissRequest = { picking = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let { ms -> onPick(LocalDate.ofEpochDay(ms / 86_400_000L)) }
+                    picking = false
+                }) { Text("Show this $what", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { picking = false }) { Text("Cancel") } },
+        ) {
+            DatePicker(state = state, title = { Text("Any day in the $what you want", modifier = Modifier.padding(start = 24.dp, top = 16.dp)) })
+        }
     }
 }
 
 private fun weekTitle(from: LocalDate) = "${from.format(Fmt.full)} – ${from.plusDays(6).format(Fmt.full)}"
+private fun periodTitle(from: LocalDate) = "${from.format(Fmt.full)} – ${from.plusDays(13).format(Fmt.full)}"
 
 @Composable
 private fun MenuButton(title: String, sub: String, value: String, valueSub: String?, modifier: Modifier, valueColor: Color = C.Ink, onClick: () -> Unit) {
@@ -740,7 +768,7 @@ private fun SalesMenu(v: Int, onOpen: (String) -> Unit) {
     val ctx = LocalContext.current
     val repo = remember { Db.get(ctx) }
     val today = LocalDate.now()
-    val pFrom = SalesRange.Week.window(today, 0).first
+    val pFrom = Periods.startOf(today)
     val fFrom = SalesRange.Week.window(today, 0, freight = true).first
     val rows = remember(v) { repo.linesBetween(minOf(pFrom, fFrom), today) }
     val pay = rows.filter { !it.first.isBefore(pFrom) }
@@ -753,15 +781,15 @@ private fun SalesMenu(v: Int, onOpen: (String) -> Unit) {
     val storeCount = remember(v) { repo.stores().size }
 
     val buttons: List<@Composable (Modifier) -> Unit> = listOf(
-        { md -> MenuButton("Pay week", weekTitle(pFrom), Fmt.money(signedNet(pay)), "net so far", md) { onOpen("pay") } },
+        { md -> MenuButton("Dashboard", "Day · Week · Month · Year to date", "›", null, md) { onOpen("history") } },
+        { md -> MenuButton("Pay period", periodTitle(pFrom), Fmt.money(signedNet(pay)), "net so far", md) { onOpen("pay") } },
         { md -> MenuButton("Freight week", weekTitle(fFrom), Fmt.money(frNet), target?.let { "of ${Fmt.money(it)} target" } ?: "no target set", md,
             valueColor = if (target != null && frNet >= target) C.Green else C.Ink) { onOpen("freight") } },
         { md -> MenuButton("Stores", "$storeCount stores", "›", null, md) { onOpen("stores") } },
-        { md -> MenuButton("Credits", "this pay week", Fmt.money(lost), if (gross > 0) pct(lost / gross) + " credit rate" else null, md,
+        { md -> MenuButton("Credits", "this pay period", Fmt.money(lost), if (gross > 0) pct(lost / gross) + " credit rate" else null, md,
             valueColor = if (lost > 0) C.Red else C.Ink) { onOpen("credits") } },
-        { md -> MenuButton("Buy backs", "this pay week", Fmt.money(buy.sumOf { abs(it.second.net) }),
+        { md -> MenuButton("Buy backs", "this pay period", Fmt.money(buy.sumOf { abs(it.second.net) }),
             buy.map { it.second.code }.distinct().size.let { "$it item" + (if (it == 1) "" else "s") + " to move" }, md) { onOpen("buybacks") } },
-        { md -> MenuButton("History", "Day · Month · Year to date", "›", null, md) { onOpen("history") } },
     )
     ScreenColumn {
         Text("Sales", fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
@@ -775,42 +803,45 @@ private fun SalesMenu(v: Int, onOpen: (String) -> Unit) {
 }
 
 @Composable
-private fun PayWeekPage(v: Int, onBack: () -> Unit) {
+private fun PayPeriodPage(v: Int, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val repo = remember { Db.get(ctx) }
     val today = LocalDate.now()
     val prefs = ctx.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
-    var back by rememberSaveable { mutableStateOf(0) }
+    // The 14-day pay period holding this day (two Sat–Fri weeks, same periods as Pay).
+    var day by rememberSaveable { mutableStateOf(today.toEpochDay()) }
     var cases by remember { mutableStateOf(prefs.getBoolean("sales_cases", false)) }
     val packs = remember(v) { repo.casePacks() }
-    val (from, to) = SalesRange.Week.window(today, back)
-    val rows = remember(v, back) { repo.linesBetween(from, to) }
-    val visits = remember(v, back) { visitBasisFor(repo, from, to) }
-    // Same Sat–Fri week a year ago (52 weeks back keeps the weekdays lined up).
+    val from = Periods.startOf(LocalDate.ofEpochDay(day))
+    val end = from.plusDays(13)
+    val to = if (end.isAfter(today)) today else end
+    val rows = remember(v, from) { repo.linesBetween(from, to) }
+    val visits = remember(v, from) { visitBasisFor(repo, from, to) }
+    // Same pay period a year ago (52 weeks back keeps the weekdays lined up).
     val lyFrom = from.minusWeeks(52)
-    val lastYear = remember(v, back) { repo.linesBetween(lyFrom, lyFrom.plusDays(6)) }
+    val lastYear = remember(v, from) { repo.linesBetween(lyFrom, lyFrom.plusDays(13)) }
 
     ScreenColumn {
-        BackBar("Pay week", onBack = onBack)
-        StepHeader(weekTitle(from), back) { back = it }
+        BackBar("Pay period", onBack = onBack)
+        DateHeader(periodTitle(from), from == Periods.startOf(today), from, "pay period") { day = it.toEpochDay() }
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Segmented(listOf("Dollars", "Cases"), if (cases) 1 else 0, Modifier.weight(1f), fill = true) { cases = it == 1; prefs.edit().putBoolean("sales_cases", cases).apply() }
             Box(Modifier.weight(1f))
         }
         if (rows.isEmpty()) Panel {
-            H2("No sales in this week yet")
-            Muted("Sales show up after each End of Day import. Use the ‹ arrow to look at earlier weeks.")
-        } else SalesOverview(rows, emptyList(), SalesRange.Week, cases, packs, oneStore = false, visits = visits, compact = true)
+            H2("No sales in this pay period yet")
+            Muted("Sales show up after each End of Day import. Tap the dates to look at an earlier pay period.")
+        } else SalesOverview(rows, emptyList(), SalesRange.TwoWeeks, cases, packs, oneStore = false, visits = visits, compact = true)
         Panel {
             H2("Vs last year")
-            if (lastYear.isEmpty()) Muted("Fills in once there's a year of imports (the week of ${lyFrom.format(Fmt.md)}, ${lyFrom.year}).", 14)
+            if (lastYear.isEmpty()) Muted("Fills in once there's a year of imports (the pay period starting ${lyFrom.format(Fmt.mdy)}).", 14)
             else {
                 val now = signedNet(rows)
                 val then = signedNet(lastYear)
                 val diff = now - then
                 Row(verticalAlignment = Alignment.Bottom) {
                     Column(Modifier.weight(1f)) {
-                        Muted("Same week last year (${weekTitle(lyFrom)})", 13)
+                        Muted("Same pay period last year (${periodTitle(lyFrom)})", 13)
                         Text(Fmt.money(then), fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
                     }
                     Text((if (diff >= 0) "+" else "−") + Fmt.money(abs(diff)) + if (then > 0) "  (" + (if (diff >= 0) "+" else "−") + Fmt.one(abs(diff) / then * 100) + "%)" else "",
@@ -838,7 +869,7 @@ private fun FreightWeekPage(v: Int, onBack: () -> Unit) {
 
     ScreenColumn {
         BackBar("Freight week", onBack = onBack)
-        StepHeader(weekTitle(from), back) { back = it }
+        DateHeader(weekTitle(from), back == 0, from, "freight week") { back = SalesRange.Week.backFor(today, it, freight = true) }
         Panel {
             H2("Target from your manager")
             androidx.compose.material3.OutlinedTextField(
@@ -927,7 +958,7 @@ private fun ReturnsPage(v: Int, buybacks: Boolean, onBack: () -> Unit) {
         if (open != null) BackBar(rows.first { it.second.cusCode == open }.second.store, back = title) { storeOpen = "" }
         else BackBar(title, onBack = onBack)
         Segmented(RETURN_RANGES.map { it.label }, ri, Modifier.fillMaxWidth(), fill = true) { ri = it; back = 0 }
-        StepHeader(range.title(today, back).replace("\n", " "), back) { back = it }
+        DateHeader(range.title(today, back).replace("\n", " "), back == 0, from, range.unit) { back = range.backFor(today, it) }
 
         if (open != null) {
             StoreReturns(rows.filter { it.second.cusCode == open }, open, sellers, creditsFirst = !buybacks)
