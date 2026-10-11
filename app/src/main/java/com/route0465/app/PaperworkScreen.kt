@@ -212,9 +212,8 @@ fun PaperworkScreen(v: Int, bump: () -> Unit, shareMsg: MutableState<String?>) {
                 }
 
                 Panel {
-                    H2("Send to bosses")
+                    H2("Email")
                     Text("To: " + emails.ifBlank { "no addresses yet" }, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = if (emails.isBlank()) C.Red else C.Ink)
-                    Muted("Change these in Setup › Email addresses.", 13)
                     val storeCount = photos.map { it.cusCode }.distinct().size
                     Muted(
                         "Attaching:\n" +
@@ -222,7 +221,7 @@ fun PaperworkScreen(v: Int, bump: () -> Unit, shareMsg: MutableState<String?>) {
                             (if (photos.isNotEmpty()) "• Store paperwork: ${photos.size} pages from $storeCount stores, as one PDF" else "• No store pages yet"),
                         14,
                     )
-                    PrimaryButton(if (busy) "Building…" else if (isToday) "Send End of Day email" else "Resend ${day.format(Fmt.day)} email", Modifier.fillMaxWidth(), enabled = !busy && emails.isNotBlank() && (eod != null || photos.isNotEmpty())) {
+                    PrimaryButton(if (busy) "Building…" else if (isToday) "Send Email" else "Resend ${day.format(Fmt.day)} email", Modifier.fillMaxWidth(), enabled = !busy && emails.isNotBlank() && (eod != null || photos.isNotEmpty())) {
                         busy = true
                         message = null
                         scope.launch {
