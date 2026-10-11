@@ -53,10 +53,8 @@ fun PayScreen(v: Int) {
             Panel(Modifier.weight(1f)) {
                 Text(status, fontSize = 14.sp, color = C.Muted, fontWeight = FontWeight.SemiBold)
                 Text("${start.format(Fmt.day)} – ${end.format(Fmt.day)}", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                    Text("Period total", fontSize = 14.sp, color = C.Muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    Text(Fmt.money(inPeriod.sumOf { it.pay }), fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, color = C.Green)
-                }
+                Text("Period total", fontSize = 14.sp, color = C.Muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 10.dp))
+                Text(Fmt.money(inPeriod.sumOf { it.pay }), fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, color = C.Green)
             }
             ArrowButton(left = false, enabled = offset < 0) { offset += 1 }
         }
