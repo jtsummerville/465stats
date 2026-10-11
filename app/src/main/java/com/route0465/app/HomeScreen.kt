@@ -103,13 +103,7 @@ fun HomeScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                         },
                         colors = SwitchDefaults.colors(checkedTrackColor = C.Green),
                     )
-                    Column(Modifier.weight(1f)) {
-                        Text("Auto-import", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        Muted(
-                            if (auto) "On. Imports by itself when XSales finishes End of Day (checks every 15 minutes and when you open the app)."
-                            else "Off. Use the End of Day button.", 14,
-                        )
-                    }
+                    Text("Auto-import", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
                 }
             }
 
