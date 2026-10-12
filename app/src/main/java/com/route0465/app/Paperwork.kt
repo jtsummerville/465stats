@@ -212,7 +212,7 @@ object Paperwork {
             type = "application/pdf"
             val addrs = to.split(',', ';', ' ', '\n').map { it.trim() }.filter { it.contains('@') }
             if (addrs.isNotEmpty()) putExtra(Intent.EXTRA_EMAIL, addrs.toTypedArray())
-            putExtra(Intent.EXTRA_SUBJECT, "Route 0465 End of Day ${date.format(Fmt.mdy)}")
+            putExtra(Intent.EXTRA_SUBJECT, "Invoices ${date.format(Fmt.mdy)} Route 0465")
             putExtra(Intent.EXTRA_TEXT, body)
             if (uris.size == 1) putExtra(Intent.EXTRA_STREAM, uris[0]) else putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
             if (uris.isNotEmpty()) {
