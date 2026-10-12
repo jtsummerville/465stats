@@ -219,6 +219,74 @@ object XSales {
         }
     }
 
+    data class SyncResult(
+        val source: String?, val newStores: Int, val newProducts: Int, val storesSeen: Int, val productsSeen: Int, val error: String? = null,
+    )
+
+    /**
+     * Brings the store and product lists in line with XSales without importing a day. Reads only the customer, product and
+     * productUnit tables from the newest backup (After or Before End of Day, whichever was written last, any date): no tickets,
+     * no sales, so the today-only rule for sales data isn't involved. New stores and products are added; ones you added,
+     * renamed or removed by hand are left alone, exactly as an import treats them.
+     */
+    @Synchronized
+    fun syncLists(ctx: Context): SyncResult {
+        fun fail(m: String) = SyncResult(null, 0, 0, 0, 0, m)
+        if (!hasAccess(ctx)) return fail("File access isn't allowed yet. Tap \"Allow file access\" on Home.")
+        val folder = folder(ctx) ?: return fail("Couldn't find the XSales folder. Set it in Setup › XSales folder.")
+        val src = listOf(AFT, BEF).map { File(folder, it) }.filter { it.isFile }.maxByOrNull { it.lastModified() }
+            ?: return fail("No XSales backup (${AFT} or ${BEF}) in ${folder.path}.")
+        val copy = try { snapshot(ctx, src) } catch (e: Exception) { return fail("Couldn't copy ${src.name}: ${e.message}") }
+        val x = try { openReadOnly(copy) } catch (e: Exception) { return fail("Couldn't open ${src.name}: ${e.message}") }
+        val stores = LinkedHashMap<String, String>()
+        val names = LinkedHashMap<String, String>()
+        val packs = HashMap<String, Double>()
+        x.use { db ->
+            if (!hasTable(db, "customer") && !hasTable(db, "product")) return fail("${src.name} has no customer or product list.")
+            if (hasTable(db, "customer")) rows(db, "SELECT * FROM customer").forEach { r ->
+                val c = r.g("cusCode") ?: return@forEach
+                stores[c] = r.g("cusName")?.takeIf { it.isNotEmpty() } ?: c
+            }
+            if (hasTable(db, "product")) rows(db, "SELECT * FROM product").forEach { r ->
+                val c = r.g("proCode") ?: return@forEach
+                names[c] = r.g("proName") ?: ""
+            }
+            if (hasTable(db, "productUnit")) rows(db, "SELECT * FROM productUnit").forEach { r ->
+                val c = r.g("proCode") ?: return@forEach
+                val m = r.g("pruMultiplyBy")?.toDoubleOrNull() ?: return@forEach
+                if (m > (packs[c] ?: 0.0)) packs[c] = m
+            }
+        }
+        if (stores.isEmpty() && names.isEmpty()) return fail("${src.name} has no stores or products in it.")
+        val repo = Db.get(ctx)
+        val w = repo.writableDatabase
+        val haveStores = w.list("SELECT cus_code FROM stores") { it.getString(0) }.toSet()
+        val haveProducts = w.list("SELECT code FROM products") { it.getString(0) }.toSet()
+        w.beginTransaction()
+        try {
+            names.forEach { (code, name) ->
+                val cp = packs[code] ?: 1.0
+                w.insertWithOnConflict("products", null, ContentValues().apply {
+                    put("code", code); put("name", name); put("case_pack", cp)
+                }, SQLiteDatabase.CONFLICT_IGNORE)
+                w.execSQL("UPDATE products SET name=?, case_pack=? WHERE code=? AND COALESCE(manual,0)=0", arrayOf<Any>(name, cp, code))
+            }
+            stores.forEach { (code, name) ->
+                w.insertWithOnConflict("stores", null, ContentValues().apply {
+                    put("cus_code", code); put("name", name)
+                }, SQLiteDatabase.CONFLICT_IGNORE)
+                w.execSQL("UPDATE stores SET name=? WHERE cus_code=? AND COALESCE(manual,0)=0", arrayOf<Any>(name, code))
+            }
+            w.setTransactionSuccessful()
+        } finally {
+            w.endTransaction()
+        }
+        val newStores = stores.keys.count { it !in haveStores }
+        val newProducts = names.keys.count { it !in haveProducts }
+        repo.log("Synced stores and products from ${src.name}: ${stores.size} stores ($newStores new), ${names.size} products ($newProducts new)")
+        return SyncResult(src.name, newStores, newProducts, stores.size, names.size)
+    }
+
     private class Doc(
         val code: String, val cus: String, val store: String, val isReturn: Boolean,
         val net: Double, val voided: Boolean, val reason: String, val isBuyback: Boolean = false,

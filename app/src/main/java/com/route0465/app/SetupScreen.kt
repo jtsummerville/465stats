@@ -465,10 +465,18 @@ private fun StoresSection(v: Int, bump: () -> Unit, back: () -> Unit) {
     var productDialog by remember { mutableStateOf<Product?>(null) } // code "" = new
     var removeProduct by remember { mutableStateOf<Product?>(null) }
     var showRemovedProducts by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var syncing by remember { mutableStateOf(false) }
+    var confirmSync by remember { mutableStateOf(false) }
+    var syncMsg by remember { mutableStateOf<Pair<String, Boolean>?>(null) } // text to isError
 
     ScreenColumn {
         SectionTop("Stores and products", back)
         Muted("New stores and products come in from XSales with each import. Anything you add, rename or remove here stays the way you set it.", 14)
+        SecondaryButton(if (syncing) "Syncing…" else "Sync from XSales", Modifier.fillMaxWidth(), enabled = !syncing) { confirmSync = true }
+        syncMsg?.let { (text, isError) ->
+            if (isError) Banner(text, C.AmberSoft, C.Amber) else Banner(text, C.GreenSoft, C.GreenDark)
+        }
 
         // ---- Stores ----
         Panel {
@@ -559,6 +567,38 @@ private fun StoresSection(v: Int, bump: () -> Unit, back: () -> Unit) {
             }
         }
     }
+
+    if (confirmSync) AlertDialog(
+        onDismissRequest = { confirmSync = false },
+        title = { Text("Sync from XSales?") },
+        text = { Text("Adds any new stores and products from XSales. Ones you added, renamed or removed stay the way you set them.") },
+        confirmButton = {
+            TextButton(onClick = {
+                confirmSync = false
+                syncing = true
+                syncMsg = null
+                scope.launch {
+                    val r = withContext(Dispatchers.IO) { runCatching { XSales.syncLists(ctx) } }
+                    syncing = false
+                    val res = r.getOrNull()
+                    syncMsg = when {
+                        res == null -> "Couldn't sync: ${r.exceptionOrNull()?.message}" to true
+                        res.error != null -> res.error to true
+                        else -> {
+                            val added = buildList {
+                                if (res.newStores > 0) add("${res.newStores} new store" + if (res.newStores == 1) "" else "s")
+                                if (res.newProducts > 0) add("${res.newProducts} new product" + if (res.newProducts == 1) "" else "s")
+                            }
+                            ((if (added.isEmpty()) "Already up to date." else "Added " + added.joinToString(" and ") + ".") +
+                                " Checked ${res.storesSeen} stores and ${res.productsSeen} products in ${res.source}.") to false
+                        }
+                    }
+                    bump()
+                }
+            }) { Text("Sync", fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = { TextButton(onClick = { confirmSync = false }) { Text("Cancel") } },
+    )
 
     storeDialog?.let { (code0, name0) ->
         val isNew = code0.isEmpty()
