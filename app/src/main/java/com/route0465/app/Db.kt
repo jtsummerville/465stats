@@ -29,6 +29,9 @@ data class DocRow(
     val voidReason: String,
 )
 
+/** A store visited on a day with no sale, as answered in the No Store Visit Survey. [summary] is what was selected. */
+data class NoSaleDay(val date: LocalDate, val cus: String, val store: String, val summary: String)
+
 data class LineRow(
     val dmdCode: String,
     val cusCode: String,
@@ -127,6 +130,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
     private fun paperworkTables(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE IF NOT EXISTS store_photos(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, cus_code TEXT, store TEXT, path TEXT, taken_at INTEGER)")
         db.execSQL("CREATE TABLE IF NOT EXISTS eod_pdfs(date TEXT PRIMARY KEY, path TEXT, name TEXT, received_at TEXT)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS no_sale_visits(date TEXT, int_code TEXT, cus_code TEXT, store TEXT, summary TEXT, PRIMARY KEY(date, int_code))")
         createPromoTables(db)
         db.execSQL("CREATE TABLE IF NOT EXISTS order_history(delivery TEXT, code TEXT, ordered INTEGER, suggested INTEGER, ran_short INTEGER, short_by INTEGER)")
         listOf("ran_short INTEGER DEFAULT 0", "short_by INTEGER DEFAULT 0").forEach { col ->
@@ -224,6 +228,16 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
             LineRow(c.s("dmd_code"), c.s("cus_code"), c.s("store"), c.s("code"), c.s("name"), c.d("qty"), c.d("price"), c.d("net"), c.i("is_return") == 1, c.i("buyback") == 1, c.s("reason"))
     }
 
+    /** Stores visited with no sale, from the No Store Visit Survey, for one day (for the End of Day email). */
+    fun noSaleVisits(date: LocalDate): List<NoSaleDay> = readableDatabase.list(
+        "SELECT * FROM no_sale_visits WHERE date=? ORDER BY rowid", arrayOf(date.toString())
+    ) { c -> NoSaleDay(LocalDate.parse(c.s("date")), c.s("cus_code"), c.s("store"), c.s("summary")) }
+
+    /** The same, over a range of days, for counting visits. */
+    fun noSaleVisitsBetween(from: LocalDate, to: LocalDate): List<NoSaleDay> = readableDatabase.list(
+        "SELECT * FROM no_sale_visits WHERE date>=? AND date<=?", arrayOf(from.toString(), to.toString())
+    ) { c -> NoSaleDay(LocalDate.parse(c.s("date")), c.s("cus_code"), c.s("store"), c.s("summary")) }
+
     fun voidsBetween(from: LocalDate, to: LocalDate): List<Pair<LocalDate, DocRow>> = readableDatabase.list(
         "SELECT * FROM docs WHERE date>=? AND date<=? AND voided=1 ORDER BY date DESC", arrayOf(from.toString(), to.toString())
     ) { c ->
@@ -240,6 +254,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
             w.delete("docs", "date=?", a)
             w.delete("lines", "date=?", a)
             w.delete("stock", "date=?", a)
+            w.delete("no_sale_visits", "date=?", a)
             log("Removed the import for ${date.format(Fmt.full)}")
             w.setTransactionSuccessful()
         } finally {

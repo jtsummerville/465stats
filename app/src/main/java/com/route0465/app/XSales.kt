@@ -26,6 +26,7 @@ sealed class ImportResult {
         val linesDropped: Int,
         val stockItems: Int,
         val missingRates: List<String>,
+        val noSaleVisits: Int = 0,
     ) : ImportResult()
 
     data class AlreadyImported(val date: LocalDate) : ImportResult()
@@ -287,6 +288,66 @@ object XSales {
         return SyncResult(src.name, newStores, newProducts, stores.size, names.size)
     }
 
+    /** One store visited with no sale, from the survey. [summary] is what was selected, e.g. "No Product Needed (Product rotation: Yes)". */
+    private class NoSale(val intCode: String, val cus: String, val store: String, val summary: String)
+
+    private const val NO_VISIT_SURVEY = "no store visit"
+
+    /**
+     * Today's "No Store Visit Survey" answers. Each filled-out survey is a store visit with no sale. Only interviews
+     * dated today are taken. The first question's answer leads (the no-sale reason); other answers follow in brackets.
+     */
+    private fun readNoSaleVisits(db: SQLiteDatabase, today: LocalDate, storeNames: Map<String, String>): List<NoSale> {
+        if (!hasTable(db, "interviewUp") || !hasTable(db, "survey")) return emptyList()
+        val surveys = rows(db, "SELECT * FROM survey")
+            .filter { (it.g("surName") ?: "").lowercase().contains(NO_VISIT_SURVEY) }.mapNotNull { it.g("surCode") }.toSet()
+        if (surveys.isEmpty()) return emptyList()
+        val qName = HashMap<String, String>()
+        if (hasTable(db, "question")) rows(db, "SELECT * FROM question").forEach { r ->
+            val c = r.g("qstCode") ?: return@forEach
+            qName[c] = r.g("qstShortName")?.takeIf { it.isNotEmpty() } ?: r.g("qstName") ?: c
+        }
+        val qOrder = HashMap<String, Int>()
+        if (hasTable(db, "surveyQuestion")) rows(db, "SELECT * FROM surveyQuestion").forEach { r ->
+            if (r.g("surCode") !in surveys) return@forEach
+            val c = r.g("qstCode") ?: return@forEach
+            qOrder[c] = r.g("sqnOrder")?.toIntOrNull() ?: 99
+        }
+        val firstQuestion = qOrder.entries.minByOrNull { it.value }?.key
+        val aName = HashMap<String, String>()
+        if (hasTable(db, "questionDetail")) rows(db, "SELECT * FROM questionDetail").forEach { r ->
+            val c = r.g("qelCode") ?: return@forEach
+            aName[c] = r.g("qelName") ?: c
+        }
+        val answers = HashMap<String, MutableList<Pair<String, String>>>()
+        if (hasTable(db, "interviewQuestionDetailUp")) rows(db, "SELECT * FROM interviewQuestionDetailUp").forEach { r ->
+            val i = r.g("intCode") ?: return@forEach
+            val q = r.g("qstCode") ?: return@forEach
+            val a = r.g("qstCodeQuestionDetail")?.takeIf { it.isNotEmpty() } ?: r.g("qelCode") ?: return@forEach
+            answers.getOrPut(i) { ArrayList() } += q to (aName[a] ?: a)
+        }
+        val out = ArrayList<NoSale>()
+        rows(db, "SELECT * FROM interviewUp").forEach { r ->
+            if (r.g("surCode") !in surveys) return@forEach
+            val day = parseLooseDate(r.g("intStartingDate")) ?: parseLooseDate(r.g("intStartTime")) ?: parseLooseDate(r.g("intLastUpdated"))
+            if (day != today) return@forEach
+            val i = r.g("intCode") ?: return@forEach
+            val cus = r.g("cusCode") ?: return@forEach
+            val byQuestion = (answers[i] ?: emptyList<Pair<String, String>>())
+                .groupBy({ it.first }, { it.second })
+                .entries.sortedBy { qOrder[it.key] ?: 99 }
+            val lead = byQuestion.firstOrNull()?.takeIf { it.key == firstQuestion }
+            val rest = byQuestion.filter { it !== lead }.map { (q, a) -> "${qName[q] ?: q}: ${a.joinToString(", ")}" }
+            val summary = when {
+                byQuestion.isEmpty() -> "No answer selected"
+                lead != null -> lead.value.joinToString(", ") + if (rest.isEmpty()) "" else " (" + rest.joinToString("; ") + ")"
+                else -> rest.joinToString("; ")
+            }
+            out += NoSale(i, cus, storeNames[cus] ?: cus, summary)
+        }
+        return out
+    }
+
     private class Doc(
         val code: String, val cus: String, val store: String, val isReturn: Boolean,
         val net: Double, val voided: Boolean, val reason: String, val isBuyback: Boolean = false,
@@ -439,6 +500,8 @@ object XSales {
                 StockRow(pc, prodNames[pc] ?: pc, r.num("rstInitial"), r.num("rstOnHands"), r.num("rstDamage"), r.num("rstReload"), casePack[pc] ?: 1.0)
             } else emptyList()
 
+            val noSale = readNoSaleVisits(db, today, storeNames)
+
             val w = repo.writableDatabase
             w.beginTransaction()
             try {
@@ -470,6 +533,12 @@ object XSales {
                         put("onhand", s.onHand); put("damage", s.damage); put("reload", s.reload); put("case_pack", s.casePack)
                     })
                 }
+                w.delete("no_sale_visits", "date=?", arrayOf(dayStr))
+                noSale.forEach { n ->
+                    w.insertWithOnConflict("no_sale_visits", null, ContentValues().apply {
+                        put("date", dayStr); put("int_code", n.intCode); put("cus_code", n.cus); put("store", n.store); put("summary", n.summary)
+                    }, SQLiteDatabase.CONFLICT_REPLACE)
+                }
                 // New stores and products are added; ones you changed or removed by hand are left alone.
                 prodNames.forEach { (code, name) ->
                     val cp = casePack[code] ?: 1.0
@@ -487,7 +556,7 @@ object XSales {
                 repo.log(
                     "Imported ${today.format(Fmt.mdy)} from $source: read $read tickets, kept ${kept.size}, " +
                         "dropped $dropped from other dates; ${lines.size} lines (ignored $linesDropped from other tickets); " +
-                        "${stock.size} stock items" + if (missing.isNotEmpty()) "; no rates for ${missing.joinToString(", ")}" else ""
+                        "${stock.size} stock items" + (if (noSale.isNotEmpty()) "; ${noSale.size} no-sale store visit" + (if (noSale.size == 1) "" else "s") else "") + if (missing.isNotEmpty()) "; no rates for ${missing.joinToString(", ")}" else ""
                 )
                 w.setTransactionSuccessful()
             } finally {
@@ -502,6 +571,7 @@ object XSales {
                 creditLines = lines.count { it.isReturn && !it.doc.voided },
                 voids = kept.count { it.voided }, ticketsRead = read, ticketsDropped = dropped,
                 linesDropped = linesDropped, stockItems = stock.size, missingRates = missing.toList(),
+                noSaleVisits = noSale.size,
             )
         }
     }

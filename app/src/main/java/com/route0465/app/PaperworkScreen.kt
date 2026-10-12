@@ -67,6 +67,7 @@ fun PaperworkScreen(v: Int, bump: () -> Unit, shareMsg: MutableState<String?>) {
 
     val photos = remember(v, day) { repo.photos(day) }
     val eod = remember(v, day) { repo.eodPdf(day) }
+    val noSale = remember(v, day) { repo.noSaleVisits(day) }
     val stores = remember(v, photos, day) {
         // Stores serviced today (if imported) first, then the rest of route 465, then any typed-in store with photos.
         val served = repo.docs(day).filter { !it.voided }.map { it.cusCode to it.store }.distinctBy { it.first }
@@ -221,6 +222,9 @@ fun PaperworkScreen(v: Int, bump: () -> Unit, shareMsg: MutableState<String?>) {
                             (if (photos.isNotEmpty()) "• Store paperwork: ${photos.size} pages from $storeCount stores, as one PDF" else "• No store pages yet"),
                         14,
                     )
+                    if (noSale.isNotEmpty()) Muted(
+                        "Store visits with no sale, in the email:\n" + noSale.joinToString("\n") { "• ${it.store}: ${it.summary}" }, 14,
+                    )
                     PrimaryButton(if (busy) "Building…" else if (isToday) "Send Email" else "Resend ${day.format(Fmt.day)} email", Modifier.fillMaxWidth(), enabled = !busy && emails.isNotBlank() && (eod != null || photos.isNotEmpty())) {
                         busy = true
                         message = null
@@ -234,7 +238,8 @@ fun PaperworkScreen(v: Int, bump: () -> Unit, shareMsg: MutableState<String?>) {
                             val perStore = photos.groupBy { it.store }.entries.joinToString("\n") { (s, l) -> "$s: ${l.size} page" + if (l.size == 1) "" else "s" }
                             val body = "Route 0465 End of Day for ${day.format(Fmt.full)}.\n\n" +
                                 (if (eod != null) "Attached: XSales End of Day PDF" else "XSales End of Day PDF: not attached") +
-                                (if (storePdf != null) " and store paperwork (${storePdf.length() / 1024} KB).\n\n$perStore" else ".")
+                                (if (storePdf != null) " and store paperwork (${storePdf.length() / 1024} KB).\n\n$perStore" else ".") +
+                                (if (noSale.isNotEmpty()) "\n\nStore visits with no sale:\n" + noSale.joinToString("\n") { "• ${it.store}: ${it.summary}" } else "")
                             try {
                                 Paperwork.email(ctx, day, emails, files, body)
                                 repo.log("End of Day email prepared: ${files.size} attachments, ${photos.size} store photos")

@@ -142,7 +142,9 @@ private fun SalesBrowser(v: Int, storesOnly: Boolean, onBack: () -> Unit) {
     // Never count days before the first import: there's no data for them, so they'd water the average down.
     val visitFrom = if (firstImport != null && firstImport.isAfter(visitStart)) firstImport else visitStart
     val visitRows = remember(v, range, back, freight) { if (!visitFrom.isBefore(from)) null else repo.linesBetween(visitFrom, to) }
-    val visitBasis = VisitBasis(if (visitFrom.isAfter(to)) to else visitFrom, to, visitRows)
+    val noSaleBasis = remember(v, range, back, freight) { repo.noSaleVisitsBetween(if (visitFrom.isBefore(from)) visitFrom else from, to) }
+    val noSaleWindow = remember(v, range, back, freight) { repo.noSaleVisitsBetween(from, to) }
+    val visitBasis = VisitBasis(if (visitFrom.isAfter(to)) to else visitFrom, to, visitRows, noSaleBasis, noSaleWindow)
     val promoWeeks = remember(v, range, back, freight) { promosByWeek(repo.promosV2(), bannersFor(repo.stores().map { it.second }).toSet(), from, to) }
     val sales = rows.filter { !it.second.isReturn }
     val credits = rows.filter { it.second.isReturn }
@@ -246,12 +248,15 @@ private fun SalesBrowser(v: Int, storesOnly: Boolean, onBack: () -> Unit) {
                 }
             } else {
                 // ---- By store: one row per store; tap for that store's own overview ----
-                val stores = rows.groupBy { it.second.cusCode }.map { (cus, l) ->
+                val surveyDays = visitBasis.windowExtra
+                val stores = (rows.groupBy { it.second.cusCode }.map { (cus, l) ->
                     val g = l.filter { !it.second.isReturn }.sumOf { m.of(it.second) }
                     val c = l.filter { it.second.isReturn }.sumOf { m.of(it.second) }
                     val cNoBuy = l.filter { it.second.isReturn && !it.second.isBuyback }.sumOf { m.of(it.second) }
-                    StoreTotal(cus, l.first().second.store, g, c, cNoBuy, l.map { it.first }.distinct().size)
-                }.sortedByDescending { it.gross - it.credits }
+                    StoreTotal(cus, l.first().second.store, g, c, cNoBuy, (l.map { it.first } + surveyDays.filter { it.cus == cus }.map { it.date }).distinct().size)
+                } + surveyDays.filter { e -> rows.none { it.second.cusCode == e.cus } }.groupBy { it.cus }.map { (cus, l) ->
+                    StoreTotal(cus, l.first().store, 0.0, 0.0, 0.0, l.map { it.date }.distinct().size)
+                }).sortedByDescending { it.gross - it.credits }
                 Panel(pad = 0.dp) {
                     Text("Stores, tap one for its own overview", fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 8.dp))
                     stores.forEach { st ->
@@ -276,13 +281,22 @@ private fun SalesBrowser(v: Int, storesOnly: Boolean, onBack: () -> Unit) {
 }
 
 /**
- * Visit averages. A visit is a store on a day with at least one ticket that wasn't voided.
+ * Visit averages. A visit is a store on a day with at least one ticket that wasn't voided, or a No Store Visit Survey filled out for it.
  * Averaged over the window, or over the 4 weeks ending with it when the window is shorter ([rows] = null means the window itself).
  */
-class VisitBasis(val from: LocalDate, val to: LocalDate, private val rows: List<Pair<LocalDate, LineRow>>?) {
+class VisitBasis(
+    val from: LocalDate, val to: LocalDate, private val rows: List<Pair<LocalDate, LineRow>>?,
+    private val extra: List<NoSaleDay> = emptyList(), val windowExtra: List<NoSaleDay> = emptyList(),
+) {
     private val days get() = (java.time.temporal.ChronoUnit.DAYS.between(from, to) + 1).coerceAtLeast(1)
+    /** Store-days with a ticket, plus store-days with a No Store Visit Survey; a store on a day counts once. */
     fun count(windowRows: List<Pair<LocalDate, LineRow>>, store: String?): Int =
-        (rows ?: windowRows).filter { store == null || it.second.cusCode == store }.map { it.first to it.second.cusCode }.distinct().size
+        ((rows ?: windowRows).filter { store == null || it.second.cusCode == store }.map { it.first to it.second.cusCode } +
+            extra.filter { store == null || it.cus == store }.map { it.date to it.cus }).distinct().size
+    /** Visits in the window itself (not the 4-week basis). */
+    fun windowCount(windowRows: List<Pair<LocalDate, LineRow>>, store: String?): Int =
+        (windowRows.filter { store == null || it.second.cusCode == store }.map { it.first to it.second.cusCode } +
+            windowExtra.filter { store == null || it.cus == store }.map { it.date to it.cus }).distinct().size
     fun perWeek(windowRows: List<Pair<LocalDate, LineRow>>, store: String?) = count(windowRows, store) * 7.0 / days
     fun perMonth(windowRows: List<Pair<LocalDate, LineRow>>, store: String?) = count(windowRows, store) * 30.44 / days
     fun note(windowRows: List<Pair<LocalDate, LineRow>>, store: String?): String {
@@ -322,7 +336,7 @@ private fun SalesOverview(
         { md -> Tile("Net sales", m.fmt(net), md) },
         { md -> Tile("Gross sales", m.fmt(gross), md) },
         { md -> Tile("Credits", m.fmt(-creditTotal), md, valueColor = if (creditTotal > 0) C.Red else C.Ink) },
-        if (oneStore) ({ md -> Tile("Visits", rows.map { it.first }.distinct().size.toString(), md, sub = "in this window") })
+        if (oneStore) ({ md -> Tile("Visits", visits.windowCount(rows, store).toString(), md, sub = "in this window") })
         else ({ md -> Tile("Stores", sales.map { it.second.cusCode }.distinct().size.toString(), md) }),
         { md -> Tile("Visits a week", Fmt.one(visits.perWeek(rows, store)), md, sub = visits.note(rows, store)) },
         { md -> Tile("Visits a month", Fmt.one(visits.perMonth(rows, store)), md, sub = if (oneStore) "average" else "all stores, average") },
@@ -681,7 +695,8 @@ private fun visitBasisFor(repo: Db, from: LocalDate, to: LocalDate): VisitBasis 
     val start = if (ChronoUnit.DAYS.between(from, to) >= 27) from else to.minusDays(27)
     val vf = if (firstImport != null && firstImport.isAfter(start)) firstImport else start
     val rows = if (!vf.isBefore(from)) null else repo.linesBetween(vf, to)
-    return VisitBasis(if (vf.isAfter(to)) to else vf, to, rows)
+    val basis = repo.noSaleVisitsBetween(if (vf.isBefore(from)) vf else from, to)
+    return VisitBasis(if (vf.isAfter(to)) to else vf, to, rows, basis, repo.noSaleVisitsBetween(from, to))
 }
 
 @Composable
