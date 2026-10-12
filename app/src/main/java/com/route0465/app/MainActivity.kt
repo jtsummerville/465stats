@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
@@ -63,6 +64,7 @@ enum class Screen(val label: String, val title: String, val icon: ImageVector) {
     Home("Home", "Home", Icons.Filled.Home),
     Paperwork("Paperwork", "End of Day paperwork", Icons.Filled.Email),
     Pay("Pay", "Pay", Icons.Filled.DateRange),
+    Expenses("Expenses", "Expenses", Icons.Filled.AccountBox),
     Sales("Sales", "Sales", Icons.Filled.List),
     Inventory("Inventory", "Inventory", Icons.Filled.Info),
     Order("Order", "Order guide", Icons.Filled.ShoppingCart),
@@ -183,6 +185,7 @@ fun AppRoot(version: MutableState<Int>, goTo: MutableState<Screen?>, shareMsg: M
                     Screen.Home -> HomeScreen(v, bump, go)
                     Screen.Paperwork -> PaperworkScreen(v, bump, shareMsg)
                     Screen.Pay -> PayScreen(v)
+                    Screen.Expenses -> ExpensesScreen()
                     Screen.Sales -> SalesScreen(v)
                     Screen.Inventory -> InventoryScreen(v)
                     Screen.Order -> OrderScreen(v, bump, go)
