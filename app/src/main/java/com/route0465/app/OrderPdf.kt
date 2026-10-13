@@ -18,24 +18,45 @@ object OrderPdf {
     fun fileName(due: LocalDate) = "Route0465_Order_${due.format(Fmt.fileMd)}.pdf"
 
     fun build(ctx: Context, items: List<OrderItem>, due: LocalDate): File {
+        val repo = Db.get(ctx)
         val doc = PdfDocument()
         val body = Paint().apply { textSize = 11f; isAntiAlias = true }
         val bold = Paint(body).apply { typeface = Typeface.DEFAULT_BOLD }
+        val boldRight = Paint(bold).apply { textAlign = Paint.Align.RIGHT }
+        val bodyRight = Paint(body).apply { textAlign = Paint.Align.RIGHT }
         val title = Paint(bold).apply { textSize = 18f }
         val ordered = items.filter { it.qty > 0 }
         val total = ordered.sumOf { it.qty }
+
+        // On hand = what the Order screen shows: cases from the latest import's truck stock.
+        val onHand = repo.stockDates().firstOrNull()
+            ?.let { d -> repo.stock(d).associate { it.code.uppercase() to it.cases } } ?: emptyMap()
+        // Dollars = cases × units per case × market rate (a market rate is per unit), newest rate on or before today.
+        val packs = repo.casePacks()
+        val today = LocalDate.now().toString()
+        var dollars = 0.0
+        var noRate = 0
+        for (it in ordered) {
+            val rate = repo.rateFor(it.code, today)?.marketRate ?: 0.0
+            if (rate <= 0.0) noRate++
+            else dollars += it.qty * (packs[it.code.uppercase()]?.takeIf { p -> p > 0 } ?: 1.0) * rate
+        }
 
         var pageNo = 1
         var page = doc.startPage(PdfDocument.PageInfo.Builder(612, 792, pageNo).create())
         var c = page.canvas
         var y = 56f
         c.drawText("Route 0465 order", 48f, y, title); y += 22f
-        c.drawText("Due ${due.format(Fmt.full)} by midnight · $total cases", 48f, y, body); y += 28f
+        c.drawText("${due.format(Fmt.mdy)} · $total cases · ${Fmt.money(dollars)} at market rate", 48f, y, body); y += 16f
+        if (noRate > 0) {
+            c.drawText("Dollar total leaves out $noRate product" + (if (noRate == 1) "" else "s") + " with no market rate.", 48f, y, body); y += 16f
+        }
+        y += 12f
 
         fun header() {
             c.drawText("Code", 48f, y, bold)
-            c.drawText("Product", 120f, y, bold)
-            c.drawText("Cases", 520f, y, bold)
+            c.drawText("On hand (cs)", 330f, y, boldRight)
+            c.drawText("Ordered (cs)", 564f, y, boldRight)
             y += 8f
             c.drawLine(48f, y, 564f, y, body)
             y += 16f
@@ -51,8 +72,8 @@ object OrderPdf {
                 header()
             }
             c.drawText(it.code, 48f, y, bold)
-            c.drawText(it.name.take(60), 120f, y, body)
-            c.drawText(it.qty.toString(), 530f, y, bold)
+            c.drawText(Fmt.one(onHand[it.code.uppercase()] ?: 0.0), 330f, y, bodyRight)
+            c.drawText(it.qty.toString(), 564f, y, boldRight)
             y += 18f
         }
         if (ordered.isEmpty()) c.drawText("No cases entered.", 48f, y, body)
