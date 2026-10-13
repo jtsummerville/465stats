@@ -47,7 +47,7 @@ object OrderPdf {
         var c = page.canvas
         var y = 56f
         c.drawText("Route 0465 order", 48f, y, title); y += 22f
-        c.drawText("${due.format(Fmt.mdy)} · $total cases · ${Fmt.money(dollars)} at market rate", 48f, y, body); y += 16f
+        c.drawText("${due.format(Fmt.mdy)} · $total cases · Market rate value: ${Fmt.money(dollars)}", 48f, y, body); y += 16f
         if (noRate > 0) {
             c.drawText("Dollar total leaves out $noRate product" + (if (noRate == 1) "" else "s") + " with no market rate.", 48f, y, body); y += 16f
         }
