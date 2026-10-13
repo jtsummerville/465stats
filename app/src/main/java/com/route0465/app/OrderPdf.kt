@@ -62,7 +62,8 @@ object OrderPdf {
             y += 16f
         }
         header()
-        for (it in ordered) {
+        // Every product on the order guide gets a row; a blank or 0 prints as 0.
+        for (it in items) {
             if (y > 750f) {
                 doc.finishPage(page)
                 pageNo++
@@ -76,7 +77,7 @@ object OrderPdf {
             c.drawText(it.qty.toString(), 564f, y, boldRight)
             y += 18f
         }
-        if (ordered.isEmpty()) c.drawText("No cases entered.", 48f, y, body)
+        if (items.isEmpty()) c.drawText("No products on the order guide.", 48f, y, body)
         doc.finishPage(page)
 
         val dir = File(ctx.cacheDir, "pdf").apply { mkdirs() }
