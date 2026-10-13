@@ -53,18 +53,31 @@ object OrderPdf {
         }
         y += 12f
 
+        // A tight table at the left margin: Code | On hand | Order, with a line between On hand and Order.
+        val onHandX = 140f
+        val orderX = 196f
+        val dividerX = 152f
+        val tableRight = 206f
+        var topY = 0f
+        var lastY = 0f
         fun header() {
+            topY = y - 12f
+            lastY = 0f
             c.drawText("Code", 48f, y, bold)
-            c.drawText("On hand (cs)", 330f, y, boldRight)
-            c.drawText("Ordered (cs)", 564f, y, boldRight)
+            c.drawText("On hand", onHandX, y, boldRight)
+            c.drawText("Order", orderX, y, boldRight)
             y += 8f
-            c.drawLine(48f, y, 564f, y, body)
+            c.drawLine(48f, y, tableRight, y, body)
             y += 16f
+        }
+        fun divider() {
+            if (lastY > 0f) c.drawLine(dividerX, topY, dividerX, lastY + 5f, body)
         }
         header()
         // Every product on the order guide gets a row; a blank or 0 prints as 0.
         for (it in items) {
             if (y > 750f) {
+                divider()
                 doc.finishPage(page)
                 pageNo++
                 page = doc.startPage(PdfDocument.PageInfo.Builder(612, 792, pageNo).create())
@@ -73,11 +86,13 @@ object OrderPdf {
                 header()
             }
             c.drawText(it.code, 48f, y, bold)
-            c.drawText(Fmt.one(onHand[it.code.uppercase()] ?: 0.0), 330f, y, bodyRight)
-            c.drawText(it.qty.toString(), 564f, y, boldRight)
+            c.drawText(Fmt.one(onHand[it.code.uppercase()] ?: 0.0), onHandX, y, bodyRight)
+            c.drawText(it.qty.toString(), orderX, y, boldRight)
+            lastY = y
             y += 18f
         }
         if (items.isEmpty()) c.drawText("No products on the order guide.", 48f, y, body)
+        divider()
         doc.finishPage(page)
 
         val dir = File(ctx.cacheDir, "pdf").apply { mkdirs() }
