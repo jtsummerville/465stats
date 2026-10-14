@@ -62,9 +62,15 @@ fun openBluetoothSettings(ctx: Context) {
     runCatching { ctx.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 }
 
-private class SheetItem(val p: UpcItem, qty: String) {
+private class SheetItem(val p: UpcItem, qty: String, val price: Double = 0.0) {
     var qty by mutableStateOf(qty)
 }
+
+/** Ole lists products highest dollar value first: by the invoice's unit price, else the uploaded market rate. */
+private fun unitPrice(repo: Db, it: SheetItem): Double =
+    if (it.price > 0) it.price else repo.rateFor(it.p.code, LocalDate.now().toString())?.marketRate ?: 0.0
+
+private fun List<SheetItem>.byValue(repo: Db): List<SheetItem> = sortedWith(compareByDescending<SheetItem> { unitPrice(repo, it) }.thenBy { it.p.code })
 
 private fun casesNote(qty: String, pack: String): String {
     val q = qty.toIntOrNull() ?: return ""
@@ -116,8 +122,9 @@ fun ScanSheetScreen(v: Int, go: (Screen) -> Unit) {
         inv.lines.groupBy { it.first.lowercase() }.forEach { (code, l) ->
             val qty = l.sumOf { it.second }
             val p = lower[code]
-            if (p == null || p.upc.isEmpty()) noBarcode += (p?.code ?: l.first().first) else items.add(SheetItem(p, qty.toString()))
+            if (p == null || p.upc.isEmpty()) noBarcode += (p?.code ?: l.first().first) else items.add(SheetItem(p, qty.toString(), inv.prices[code] ?: 0.0))
         }
+        val sorted = items.toList().byValue(repo); items.clear(); items.addAll(sorted)
         storeCode = inv.cusCode; storeName = inv.store; date = LocalDate.now().format(Fmt.mdy)
         persist()
         msg = (if (noBarcode.isEmpty()) "Filled from invoice ${inv.code}. Check it over, then print." to true
@@ -142,7 +149,7 @@ fun ScanSheetScreen(v: Int, go: (Screen) -> Unit) {
             return
         }
         val sheet = SheetPrint(storeCode, storeName, day!!, route.trim().ifEmpty { Prefs.routeNumber(ctx) },
-            items.map { SheetLine(it.p.code, it.p.desc, it.p.upc, it.p.casePack, it.qty.toInt()) })
+            items.toList().byValue(repo).map { SheetLine(it.p.code, it.p.desc, it.p.upc, it.p.casePack, it.qty.toInt()) })
         gate {
             busy = true; msg = null
             scope.launch {
@@ -225,7 +232,7 @@ fun ScanSheetScreen(v: Int, go: (Screen) -> Unit) {
 
     if (pickStore) StorePickerDialog(stores, { (c, n) -> storeCode = c; storeName = n; persist(); pickStore = false }) { pickStore = false }
     if (pickProduct) UpcPickerDialog(upcs, items.map { it.p.code }.toSet(), { p ->
-        items.add(SheetItem(p, "")); persist(); pickProduct = false
+        items.add(SheetItem(p, "")); val sorted = items.toList().byValue(repo); items.clear(); items.addAll(sorted); persist(); pickProduct = false
     }) { pickProduct = false }
     removing?.let { r ->
         ConfirmDialog("Remove ${r.p.code}?", "Take ${r.p.desc} off this sheet?", "Remove", { items.remove(r); persist() }) { removing = null }

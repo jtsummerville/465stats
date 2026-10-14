@@ -85,7 +85,8 @@ object XSales {
     }
 
     /** A finalized invoice from XSales' live file, for filling a scan sheet before End of Day. */
-    data class LiveInvoice(val code: String, val cusCode: String, val store: String, val time: String, val lines: List<Pair<String, Int>>)
+    /** [prices]: unit price per product code on this invoice, for ordering the scan sheet highest-dollar first. */
+    data class LiveInvoice(val code: String, val cusCode: String, val store: String, val time: String, val lines: List<Pair<String, Int>>, val prices: Map<String, Double> = emptyMap())
 
     /**
      * Today's finalized invoices, read from XSales' live working file (Main.sqlite) without touching it:
@@ -132,10 +133,15 @@ object XSales {
                 names[c] = r.g("cusName")?.takeIf { it.isNotEmpty() } ?: c
             }
             val sold = HashMap<String, MutableList<Pair<String, Int>>>()
+            val prices = HashMap<String, HashMap<String, Double>>()
             if (hasTable(db, "invoiceProductUp")) rows(db, "SELECT * FROM invoiceProductUp").forEach { r ->
                 val d = r.g("dmdCode") ?: return@forEach
                 val q = r.num("iprQuantity")
-                if (q > 0) sold.getOrPut(d) { ArrayList() } += (r.g("proCode") ?: "") to q.toInt()
+                if (q > 0) {
+                    val pc = r.g("proCode") ?: ""
+                    sold.getOrPut(d) { ArrayList() } += pc to q.toInt()
+                    r.num("iprPrice").takeIf { it > 0 }?.let { prices.getOrPut(d) { HashMap() }[pc.lowercase()] = it }
+                }
             }
             val ordered = HashMap<String, MutableList<Pair<String, Int>>>()
             if (hasTable(db, "demandProductUp")) rows(db, "SELECT * FROM demandProductUp").forEach { r ->
@@ -154,7 +160,7 @@ object XSales {
                 val lines = sold[code] ?: ordered[code] ?: return@forEach
                 val cus = r.g("cusCode") ?: ""
                 val time = stamp?.substringAfter(' ', "")?.take(5) ?: ""
-                out += LiveInvoice(code, cus, names[cus] ?: cus, time, lines)
+                out += LiveInvoice(code, cus, names[cus] ?: cus, time, lines, prices[code] ?: emptyMap())
             }
             if (out.isEmpty()) return emptyList<LiveInvoice>() to "Found XSales' live file (${main.path}), but there are no finalized invoices for today in it yet."
             return out.sortedByDescending { it.time } to null
