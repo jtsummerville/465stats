@@ -95,59 +95,57 @@ fun PromosScreen(v: Int, bump: () -> Unit) {
     }
 
     ScreenColumn {
-        Split {
-            Panel(Modifier.part(1.4f)) {
-                H2("Promotions")
-                if (current.isEmpty()) Muted("No current or upcoming promotions.")
-                current.sortedBy { it.start }.forEach { PromoCard(it) }
-                if (ended.isNotEmpty()) {
-                    HorizontalDivider(color = C.Divider)
-                    Row(Modifier.fillMaxWidth().clickable { showEnded = !showEnded }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Ended", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
-                        Muted("${ended.size}", 13)
-                        Text(if (showEnded) "  ▴" else "  ▾", fontSize = 18.sp, color = C.Muted)
-                    }
-                    if (showEnded) ended.forEach { PromoCard(it) }
+        Panel(Modifier.fillMaxWidth()) {
+            H2("Add a promotion")
+            Box {
+                PickField("Banner (every store of that chain)", banner) { bannerMenu = true }
+                DropdownMenu(expanded = bannerMenu, onDismissRequest = { bannerMenu = false }) {
+                    (banners + ALL_BANNERS).forEach { b -> DropdownMenuItem(text = { Text(b) }, onClick = { banner = b; bannerMenu = false }) }
                 }
             }
-            Panel(Modifier.part(1f)) {
-                H2("Add a promotion")
-                Box {
-                    PickField("Banner (every store of that chain)", banner) { bannerMenu = true }
-                    DropdownMenu(expanded = bannerMenu, onDismissRequest = { bannerMenu = false }) {
-                        (banners + ALL_BANNERS).forEach { b -> DropdownMenuItem(text = { Text(b) }, onClick = { banner = b; bannerMenu = false }) }
-                    }
+            OutlinedTextField(type, { type = it }, Modifier.fillMaxWidth(), singleLine = true,
+                label = { Text("Sale type or deal, e.g. BOGO, 2 for \$5, Rollback") })
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                CalendarField("Starts", start, null, Modifier.weight(1f)) { start = it }
+                CalendarField("Ends", end, parseLooseDate(start, today), Modifier.weight(1f)) { end = it }
+            }
+            Text("Products (${items.size})", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = C.Muted)
+            items.forEach { code ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(code, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.width(64.dp))
+                    Text(names[code.uppercase()] ?: "", fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Text("✕", color = C.Red, modifier = Modifier.clickable { items = items - code }.padding(8.dp))
                 }
-                OutlinedTextField(type, { type = it }, Modifier.fillMaxWidth(), singleLine = true,
-                    label = { Text("Sale type or deal, e.g. BOGO, 2 for \$5, Rollback") })
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    CalendarField("Starts", start, null, Modifier.weight(1f)) { start = it }
-                    CalendarField("Ends", end, parseLooseDate(start, today), Modifier.weight(1f)) { end = it }
+            }
+            SecondaryButton(if (items.isEmpty()) "Pick products" else "Add more products") { picking = true }
+            error?.let { Banner(it, C.AmberSoft, C.Amber) }
+            PrimaryButton("Add promotion", Modifier.fillMaxWidth(), enabled = banner.isNotEmpty() && type.isNotBlank() && items.isNotEmpty()) {
+                val s0 = parseLooseDate(start, today)
+                val e0 = parseLooseDate(end, today)
+                error = when {
+                    s0 == null || e0 == null -> "Enter both dates, like 10/10/2026."
+                    s0.isAfter(e0) -> "The end date is before the start date."
+                    else -> null
                 }
-                Text("Products (${items.size})", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = C.Muted)
-                items.forEach { code ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(code, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, modifier = Modifier.width(64.dp))
-                        Text(names[code.uppercase()] ?: "", fontSize = 14.sp, modifier = Modifier.weight(1f))
-                        Text("✕", color = C.Red, modifier = Modifier.clickable { items = items - code }.padding(8.dp))
-                    }
+                if (error == null && s0 != null && e0 != null) {
+                    repo.addPromoV2(banner, type.trim(), items, s0, e0)
+                    banner = ""; type = ""; start = ""; end = ""; items = emptyList()
+                    bump()
                 }
-                SecondaryButton(if (items.isEmpty()) "Pick products" else "Add more products") { picking = true }
-                error?.let { Banner(it, C.AmberSoft, C.Amber) }
-                PrimaryButton("Add promotion", Modifier.fillMaxWidth(), enabled = banner.isNotEmpty() && type.isNotBlank() && items.isNotEmpty()) {
-                    val s0 = parseLooseDate(start, today)
-                    val e0 = parseLooseDate(end, today)
-                    error = when {
-                        s0 == null || e0 == null -> "Enter both dates, like 10/10/2026."
-                        s0.isAfter(e0) -> "The end date is before the start date."
-                        else -> null
-                    }
-                    if (error == null && s0 != null && e0 != null) {
-                        repo.addPromoV2(banner, type.trim(), items, s0, e0)
-                        banner = ""; type = ""; start = ""; end = ""; items = emptyList()
-                        bump()
-                    }
+            }
+        }
+        Panel(Modifier.fillMaxWidth()) {
+            H2("Promotions")
+            if (current.isEmpty()) Muted("No current or upcoming promotions.")
+            current.sortedBy { it.start }.forEach { PromoCard(it) }
+            if (ended.isNotEmpty()) {
+                HorizontalDivider(color = C.Divider)
+                Row(Modifier.fillMaxWidth().clickable { showEnded = !showEnded }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Ended", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                    Muted("${ended.size}", 13)
+                    Text(if (showEnded) "  ▴" else "  ▾", fontSize = 18.sp, color = C.Muted)
                 }
+                if (showEnded) ended.forEach { PromoCard(it) }
             }
         }
     }
