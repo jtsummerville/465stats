@@ -156,6 +156,7 @@ private fun SalesBrowser(v: Int, storesOnly: Boolean, onBack: () -> Unit) {
     val rate = if (gross > 0) credits.filter { !it.second.isBuyback }.sumOf { abs(it.second.net) } / gross else 0.0
 
     var storeOpen by rememberSaveable { mutableStateOf("") }
+    SalesLink.pendingStore?.let { if (storesOnly) { storeOpen = it; range = SalesRange.Week; back = 0 }; SalesLink.pendingStore = null }
     val sellers = remember(v, storeOpen, range, back) { if (storeOpen.isEmpty()) emptyMap() else sellsMostAt(repo, to) }
     BackHandler(enabled = storeOpen.isNotEmpty() && view == 1) { storeOpen = "" }
 
@@ -213,7 +214,7 @@ private fun SalesBrowser(v: Int, storesOnly: Boolean, onBack: () -> Unit) {
                 Muted(if (range == SalesRange.Today && back == 0) "Sales show up after today's End of Day import. Use the ‹ arrow to look at earlier days." else "Use the arrows to look at another ${range.unit}, or pick a different window.")
             }
         } else if (view == 0) {
-            SalesOverview(rows, promoWeeks, range, cases, packs, oneStore = false, visits = visitBasis, creditsByProduct = false)
+            SalesOverview(rows, promoWeeks, range, cases, packs, oneStore = false, visits = visitBasis, creditsByProduct = false, onStore = { cus -> SalesLink.pendingStore = cus; onBack() })
         } else {
             val m = Measure(cases, packs)
             val selected = storeOpen.takeIf { sel -> sel.isNotEmpty() && rows.any { it.second.cusCode == sel } }
@@ -317,7 +318,7 @@ private class Measure(val cases: Boolean, val packs: Map<String, Double>) {
 private fun SalesOverview(
     rows: List<Pair<LocalDate, LineRow>>, promoWeeks: List<Pair<LocalDate, List<PromoWeekLine>>>,
     range: SalesRange, cases: Boolean, packs: Map<String, Double>, oneStore: Boolean,
-    visits: VisitBasis, store: String? = null, compact: Boolean = false, creditsByProduct: Boolean = true,
+    visits: VisitBasis, store: String? = null, compact: Boolean = false, creditsByProduct: Boolean = true, onStore: ((String) -> Unit)? = null,
 ) {
     val m = Measure(cases, packs)
     val sales = rows.filter { !it.second.isReturn }
@@ -360,7 +361,7 @@ private fun SalesOverview(
                 val buckets = rows.groupBy { Periods.weekStart(it.first) }.toSortedMap().map { (d, l) -> d.format(Fmt.md) to signed(l) }
                 BarChart(buckets, m::fmt)
             } else if (pieByStore && !oneStore) {
-                PieChart(storeSlices(rows.groupBy { it.second.store }.map { (st, l) -> st to signed(l) }), m::fmt)
+                PieChart(storeSlices(rows.groupBy { it.second.cusCode }.map { (cus, l) -> Triple(cus, l.first().second.store, signed(l)) }), m::fmt, onStore = onStore)
             } else {
                 // One slice per route day (weekday), Monday first; colour belongs to the weekday, never its rank.
                 val byDow = rows.groupBy { it.first.dayOfWeek }.toSortedMap()
@@ -512,7 +513,13 @@ private fun BarList(items: List<Pair<String, Double>>, fmt: (Double) -> String) 
     }
 }
 
-private class PieSlice(val label: String, val value: Double, val color: Color)
+/** [others]: the stores folded into an "Other" slice, as (cusCode, name, value), biggest first. */
+private class PieSlice(val label: String, val value: Double, val color: Color, val others: List<Triple<String, String, Double>> = emptyList())
+
+/** Lets a pie's Other popup send you to a store's page (Sales › Stores opens with it). */
+object SalesLink {
+    var pendingStore: String? = null
+}
 
 // Fixed colour per weekday, Mon..Sun (validated categorical order, colourblind-checked).
 private val DAY_COLORS = listOf(
@@ -522,9 +529,33 @@ private val DAY_COLORS = listOf(
 
 /** Donut chart with a legend giving each slice's value and share. Negative nets get no slice but stay in the legend. */
 @Composable
-private fun PieChart(items: List<PieSlice>, fmt: (Double) -> String = Fmt::money) {
+private fun PieChart(items: List<PieSlice>, fmt: (Double) -> String = Fmt::money, onStore: ((String) -> Unit)? = null) {
     if (items.isEmpty()) return
     val total = items.sumOf { max(0.0, it.value) }
+    var showOther by remember { mutableStateOf<PieSlice?>(null) }
+    showOther?.let { sl ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showOther = null },
+            confirmButton = { TextButton(onClick = { showOther = null }) { Text("Close", fontWeight = FontWeight.Bold) } },
+            title = { Text(sl.label.replace(" (", " · ").removeSuffix(")"), fontSize = 19.sp, fontWeight = FontWeight.ExtraBold) },
+            text = {
+                Column {
+                    Muted(fmt(sl.value) + (if (total > 0) " · ${Math.round(sl.value / total * 100)}% of net" else "") + if (onStore != null) ". Tap a store to open its page." else "", 13)
+                    sl.others.forEach { (cus, name, v) ->
+                        HorizontalDivider(color = C.Divider)
+                        Row(
+                            Modifier.fillMaxWidth().clickable(enabled = onStore != null) { showOther = null; onStore?.invoke(cus) }.padding(vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(name, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                            Text(fmt(v), fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                            Text(if (total > 0 && v > 0) "${Math.round(v / total * 100)}%" else "—", fontSize = 13.sp, color = C.Muted, textAlign = TextAlign.End, modifier = Modifier.width(44.dp))
+                        }
+                    }
+                }
+            },
+        )
+    }
     val donut = @Composable {
         Box(Modifier.size(190.dp), contentAlignment = Alignment.Center) {
             androidx.compose.foundation.Canvas(Modifier.size(190.dp)) {
@@ -555,9 +586,14 @@ private fun PieChart(items: List<PieSlice>, fmt: (Double) -> String = Fmt::money
     val legend = @Composable { mod: Modifier ->
         Column(mod, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items.forEach { sl ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                val tappable = sl.others.isNotEmpty()
+                Row(
+                    Modifier.clip(RoundedCornerShape(8.dp)).background(if (tappable) C.GreenSoft else Color.Transparent)
+                        .clickable(enabled = tappable) { showOther = sl }.padding(horizontal = if (tappable) 6.dp else 0.dp, vertical = if (tappable) 4.dp else 0.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Box(Modifier.size(12.dp).clip(RoundedCornerShape(3.dp)).background(sl.color))
-                    Text(sl.label, fontSize = 14.sp, color = C.Ink, modifier = Modifier.padding(start = 8.dp).weight(1f))
+                    Text(sl.label + if (tappable) " ›" else "", fontSize = 14.sp, color = C.Ink, modifier = Modifier.padding(start = 8.dp).weight(1f))
                     Text(fmt(sl.value), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = C.Ink)
                     val pct = if (total > 0 && sl.value > 0) Math.round(sl.value / total * 100).toString() + "%" else "—"
                     Text(pct, fontSize = 13.sp, color = C.Muted, textAlign = TextAlign.End, modifier = Modifier.width(48.dp))
@@ -646,6 +682,7 @@ private fun SalesArrow(left: Boolean, enabled: Boolean = true, onClick: () -> Un
 @Composable
 fun SalesScreen(v: Int) {
     var page by rememberSaveable { mutableStateOf("menu") }
+    if (SalesLink.pendingStore != null && page != "stores") page = "stores"
     BackHandler(enabled = page != "menu") { page = "menu" }
     val toMenu = { page = "menu" }
     when (page) {
@@ -840,7 +877,7 @@ private fun PayPeriodPage(v: Int, onBack: () -> Unit) {
         if (rows.isEmpty()) Panel {
             H2("No sales in this pay period yet")
             Muted("Sales show up after each End of Day import. Tap the dates to look at an earlier pay period.")
-        } else SalesOverview(rows, emptyList(), SalesRange.TwoWeeks, cases, packs, oneStore = false, visits = visits, compact = true)
+        } else SalesOverview(rows, emptyList(), SalesRange.TwoWeeks, cases, packs, oneStore = false, visits = visits, compact = true, onStore = { cus -> SalesLink.pendingStore = cus; onBack() })
         Panel {
             H2("Vs last year")
             if (lastYear.isEmpty()) Muted("Fills in once there's a year of imports (the pay period starting ${lyFrom.format(Fmt.mdy)}).", 14)
@@ -1092,11 +1129,11 @@ private fun StoreReturns(sRows: List<Pair<LocalDate, LineRow>>, cus: String, sel
 }
 
 /** Store slices for the pie: the 7 biggest stores, then everyone else as Other. */
-private fun storeSlices(byStore: List<Pair<String, Double>>): List<PieSlice> {
-    val sorted = byStore.sortedByDescending { it.second }
+private fun storeSlices(byStore: List<Triple<String, String, Double>>): List<PieSlice> {
+    val sorted = byStore.sortedByDescending { it.third }
     val colors = DAY_COLORS + Color(0xFFE34948)
-    if (sorted.size <= colors.size) return sorted.mapIndexed { i, (n, v) -> PieSlice(n, v, colors[i]) }
-    val top = sorted.take(7).mapIndexed { i, (n, v) -> PieSlice(n, v, colors[i]) }
+    if (sorted.size <= colors.size) return sorted.mapIndexed { i, (_, n, v) -> PieSlice(n, v, colors[i]) }
+    val top = sorted.take(7).mapIndexed { i, (_, n, v) -> PieSlice(n, v, colors[i]) }
     val rest = sorted.drop(7)
-    return top + PieSlice("Other (${rest.size} stores)", rest.sumOf { it.second }, Color(0xFF9AA39D))
+    return top + PieSlice("Other (${rest.size} stores)", rest.sumOf { it.third }, Color(0xFF9AA39D), rest)
 }
