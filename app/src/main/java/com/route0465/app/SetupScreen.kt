@@ -50,6 +50,7 @@ import java.time.LocalDate
 
 /** Setup is a menu of sections. Each section shows its settings read-only; changing anything takes Edit, then Save. */
 private enum class SetupSection(val title: String) {
+    Guide("Getting started"),
     Route("Route and pay periods"),
     Rates("Rates"),
     OrderGuide("Order guide"),
@@ -76,6 +77,7 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
     val back = { sectionName = "" }
     when (if (sectionName.isEmpty()) null else SetupSection.valueOf(sectionName)) {
         null -> SetupMenu(v) { sectionName = it.name }
+        SetupSection.Guide -> GuideSection(back) { sectionName = it }
         SetupSection.Route -> RouteSection(bump, back)
         SetupSection.Rates -> RatesSection(v, bump, back)
         SetupSection.OrderGuide -> OrderGuideSection(v, bump, back)
@@ -101,6 +103,7 @@ private fun SetupMenu(v: Int, open: (SetupSection) -> Unit) {
         val last = repo.days().firstOrNull()
         val backups = if (XSales.hasAccess(ctx)) DataBackup.list() else emptyList()
         mapOf(
+            SetupSection.Guide to "Step-by-step: setting up a new tablet, then the daily routine",
             SetupSection.Route to "Route ${Prefs.routeNumber(ctx)}" + (if (Prefs.routeSource(ctx) == "xsales") " (from XSales)" else if (Prefs.routeSource(ctx) == "you") " (typed in)" else " (not read yet)") + " · pay periods from ${Periods.ANCHOR.format(Fmt.mdy)}",
             SetupSection.Rates to repo.rateSummary(),
             SetupSection.OrderGuide to "${order.size} products" + Prefs.orderEmail(ctx).let { if (it.isBlank()) "" else " · orders go to $it" },
@@ -116,6 +119,7 @@ private fun SetupMenu(v: Int, open: (SetupSection) -> Unit) {
         )
     }
     ScreenColumn {
+        SetupChecklist(v, XSales.hasAccess(ctx)) { open(SetupSection.valueOf(it)) }
         Muted("Tap a section to look at it. Nothing changes until you tap Edit and then Save.", 14)
         Panel(pad = 0.dp) {
             SetupSection.entries.forEachIndexed { i, s ->
@@ -1107,6 +1111,47 @@ private fun RouteSection(bump: () -> Unit, back: () -> Unit) {
                 },
             )
             error?.let { Banner(it, C.AmberSoft, C.Amber) }
+        }
+    }
+}
+
+/**
+ * First-run checklist at the top of Setup: what a fresh install still needs. Each line opens the Setup section
+ * that fixes it. Gone once everything's done.
+ */
+@Composable
+fun SetupChecklist(v: Int, access: Boolean, open: (String) -> Unit) {
+    val ctx = LocalContext.current
+    val repo = remember { Db.get(ctx) }
+    val items: List<Triple<String, Boolean, String?>> = remember(v, access) {
+        listOf(
+            Triple("Allow file access so XSales backups can be read", access, null),
+            Triple("XSales folder found", access && XSales.folder(ctx) != null, "Folder"),
+            Triple("Stores and products synced from XSales (Setup › Stores and products › Sync from XSales)", repo.productCount() > 0, "Stores"),
+            Triple("Route number read from XSales or typed in", Prefs.routeSource(ctx).isNotBlank(), "Route"),
+            Triple("Pay period start checked (Setup › Route and pay periods)", Prefs.routeSource(ctx).isNotBlank() || repo.days().isNotEmpty(), "Route"),
+            Triple("Market rates and commission uploaded", repo.rateSummary() != "No rates uploaded yet", "Rates"),
+            Triple("Order schedule and order guide set", repo.orderItems().isNotEmpty(), "OrderGuide"),
+            Triple("Email addresses set", Prefs.orderEmail(ctx).isNotBlank() || Prefs.bossEmails(ctx).isNotBlank(), "Emails"),
+            Triple("Backup password set", Prefs.backupPassword(ctx).isNotEmpty(), "Backups"),
+            Triple("Printer chosen (only if you print scan sheets)", PrinterPrefs.name(ctx).isNotBlank(), "Printer"),
+        )
+    }
+    val left = items.count { !it.second }
+    if (left == 0) return
+    // Only the printer is optional: once everything else is done, stop nagging.
+    if (left == 1 && !items.last().second && repo.days().isNotEmpty()) return
+    Panel(bg = C.AmberSoft, line = C.AmberLine) {
+        Text("Getting set up · $left to go", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = C.Amber)
+        items.forEach { (label, done, section) ->
+            Row(
+                Modifier.fillMaxWidth().clickable(enabled = !done && section != null) { open(section!!) }.padding(vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(if (done) "✓" else "○", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = if (done) C.Green else C.Amber, modifier = Modifier.width(26.dp))
+                Text(label, fontSize = 14.sp, color = if (done) C.Muted else C.Ink, modifier = Modifier.weight(1f))
+                if (!done && section != null) Text("›", fontSize = 20.sp, color = C.Amber)
+            }
         }
     }
 }
