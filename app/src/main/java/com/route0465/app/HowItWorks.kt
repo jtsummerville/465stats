@@ -71,10 +71,10 @@ val HOW_TOPICS: List<HowTopic> = listOf(
     HowTopic(
         "route", "Route and setup", "Route number, pay period start, the Home checklist",
         listOf(
-            "Route number" to "Read from XSales at every import and sync (the first column named like route in its general table that holds digits). It goes on the rail, every email, PDF and printout. Typing one in Setup › Route and pay periods overrides XSales until you blank it out again.",
+            "Route number" to "Read from XSales at every import and sync (rotCode in its general table). It goes on the rail, every email, PDF and printout. Typing one in Setup › Route and pay periods overrides XSales until you blank it out again.",
             "Pay period start" to "Any Saturday that starts a pay period; every period is counted in 14-day steps from it. Change it only if your pay periods run on the other week.",
             "Getting set up" to "Home shows a checklist on a fresh install: file access, the XSales folder, a sync, the route number, rates, order schedule and guide, emails, a backup password, and the printer. Each line opens the Setup section for it. It disappears when everything's done (the printer is optional once a day has been imported).",
-            "Barcodes" to "The UPC list is built in. When XSales' product list has a barcode column, Sync from XSales reads it and those barcodes take over for matching products, and new products get added; the sync log says how many. With no barcode column, the built-in list stays as is.",
+            "Barcodes" to "The UPC list is built in. XSales' product list carries each product's UPC (proBarCode), and Sync from XSales reads it and those barcodes take over for matching products, and new products get added; the sync log says how many. With no barcode column, the built-in list stays as is.",
         ),
     ),
     HowTopic(

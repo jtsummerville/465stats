@@ -194,16 +194,14 @@ object XSales {
         db.list("SELECT 1 FROM sqlite_master WHERE type='table' AND name=? COLLATE NOCASE", arrayOf(name)) { 1 }.isNotEmpty()
 
     /**
-     * The route number XSales is set up for. Looked for in the general table (any column named like
-     * rouCode / gnlRoute / route holding digits), then in routeStock / demandUp. Saved to Setup › Route
-     * unless the driver typed one in by hand.
+     * The route number XSales is set up for: general.rotCode (confirmed on Ajax's 10/13 backup: "0465"),
+     * falling back to the route table. Saved to Setup › Route unless the driver typed one in by hand.
      */
     private fun findRoute(db: SQLiteDatabase): String? {
-        for (t in listOf("general", "routeStock", "demandUp", "route")) {
+        for (t in listOf("general", "route", "routeStock")) {
             if (!hasTable(db, t)) continue
-            val r = rows(db, "SELECT * FROM $t LIMIT 1").firstOrNull() ?: continue
-            val hit = r.entries.firstOrNull { (k, v) -> k.contains("rou") && !k.contains("group") && v?.trim()?.matches(Regex("[0-9]{2,6}")) == true }
-            if (hit != null) return hit.value!!.trim()
+            val v = rows(db, "SELECT * FROM $t LIMIT 1").firstOrNull()?.g("rotCode")?.trim()
+            if (!v.isNullOrEmpty()) return v
         }
         return null
     }
@@ -214,10 +212,11 @@ object XSales {
         if (r != Prefs.routeNumberRaw(ctx)) { Prefs.setRouteNumber(ctx, r); Prefs.setRouteSource(ctx, "xsales"); Db.get(ctx).log("Route number $r read from XSales") }
     }
 
-    /** A product's barcode, from any column named like barcode / upc / ean / gtin, if XSales has one. */
-    private fun upcOf(r: Map<String, String?>): String? =
-        r.entries.firstOrNull { (k, v) -> (k.contains("barcode") || k.contains("upc") || k.contains("ean") || k.contains("gtin")) && v?.trim()?.matches(Regex("[0-9]{11,14}")) == true }
-            ?.value?.trim()?.let { if (it.length == 12) it else if (it.length == 13 && it.startsWith("0")) it.substring(1) else if (it.length == 11) "0$it" else null }
+    /** A product's UPC: product.proBarCode or productUnit.pruBarCode (padded with spaces in XSales; 907 of 969 products have one). */
+    private fun upcOf(r: Map<String, String?>): String? {
+        val raw = (r.g("proBarCode") ?: r.g("pruBarCode"))?.trim()?.takeIf { it.matches(Regex("[0-9]{11,14}")) } ?: return null
+        return when (raw.length) { 12 -> raw; 13 -> if (raw.startsWith("0")) raw.substring(1) else null; 11 -> "0$raw"; else -> null }
+    }
 
     private fun businessDate(db: SQLiteDatabase): LocalDate? {
         if (!hasTable(db, "general")) return null
