@@ -224,25 +224,19 @@ private fun SalesBrowser(v: Int, storesOnly: Boolean, onBack: () -> Unit) {
                 SalesOverview(sRows, emptyList(), range, cases, packs, oneStore = true, visits = visitBasis, store = selected)
                 StoreReturns(sRows, selected, sellers)
                 Panel {
-                    H2("Products")
-                    // Cases view: sold and credited in cases. Dollars view: eaches and dollars for each.
-                    val w = if (cases) listOf(0.8f, 3f, 1.1f, 1.1f) else listOf(0.8f, 3f, 0.9f, 1.1f, 0.9f, 1.1f)
+                    H2("Products sold")
+                    Muted("What this store bought in the window. Credits are on the Credits page.", 13)
+                    val w = if (cases) listOf(0.8f, 3f, 1.1f) else listOf(0.8f, 3f, 1f, 1.2f)
                     TableRow(
-                        if (cases) listOf("Code", "Product", "Sold", "Credited") else listOf("Code", "Product", "Sold", "Sales", "Cred.", "Credit $"),
-                        w, header = true, endAligned = if (cases) setOf(2, 3) else setOf(2, 3, 4, 5),
+                        if (cases) listOf("Code", "Product", "Sold") else listOf("Code", "Product", "Sold", "Sales"),
+                        w, header = true, endAligned = if (cases) setOf(2) else setOf(2, 3),
                     )
-                    sRows.map { it.second }.groupBy { it.code }.map { (code, l) ->
-                        val sold = l.filter { !it.isReturn }
-                        val cr = l.filter { it.isReturn }
-                        val crQty = if (cr.isEmpty()) "—" else m.qty(code, cr.sumOf { it.qty })
-                        (if (cases) listOf(code, l.first().name, m.qty(code, sold.sumOf { it.qty }), crQty)
-                        else listOf(
-                            code, l.first().name, Fmt.qty(sold.sumOf { it.qty }), Fmt.money(sold.sumOf { it.net }),
-                            crQty, if (cr.isEmpty()) "—" else Fmt.money(-cr.sumOf { abs(it.net) }),
-                        )) to sold.sumOf { m.of(it) }
+                    sRows.map { it.second }.filter { !it.isReturn }.groupBy { it.code }.map { (code, sold) ->
+                        (if (cases) listOf(code, sold.first().name, m.qty(code, sold.sumOf { it.qty }))
+                        else listOf(code, sold.first().name, Fmt.qty(sold.sumOf { it.qty }), Fmt.money(sold.sumOf { it.net }))) to sold.sumOf { m.of(it) }
                     }.sortedByDescending { it.second }.forEach { (cells, _) ->
                         HorizontalDivider(color = C.Divider)
-                        TableRow(cells, w, bold = setOf(2, 3), endAligned = if (cases) setOf(2, 3) else setOf(2, 3, 4, 5))
+                        TableRow(cells, w, bold = setOf(2, 3), endAligned = if (cases) setOf(2) else setOf(2, 3))
                     }
                 }
             } else {
