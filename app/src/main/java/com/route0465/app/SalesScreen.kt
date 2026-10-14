@@ -126,8 +126,8 @@ private fun SalesBrowser(v: Int, storesOnly: Boolean, onBack: () -> Unit) {
     var range by rememberSaveable { mutableStateOf(if (storesOnly) SalesRange.Week else SalesRange.Today) }
     var back by rememberSaveable { mutableStateOf(0) }
     var picking by remember { mutableStateOf(false) }
-    var viewPick by rememberSaveable { mutableStateOf(0) }
-    val view = if (storesOnly) 1 else viewPick
+    // Dashboard is the overview only; Stores is the by-store list (the Sales menu has a page for each).
+    val view = if (storesOnly) 1 else 0
     val freight = false
     val (from, to) = range.window(today, back, freight)
 
@@ -202,11 +202,9 @@ private fun SalesBrowser(v: Int, storesOnly: Boolean, onBack: () -> Unit) {
                 DatePicker(state = state, title = { Text("Any day in the ${range.unit} you want", modifier = Modifier.padding(start = 24.dp, top = 16.dp)) })
             }
         }
-        // View switch (History only) and Dollars / Cases.
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            if (!storesOnly) Segmented(listOf("Overview", "By store"), viewPick, Modifier.weight(1f), fill = true) { viewPick = it }
             Segmented(listOf("Dollars", "Cases"), if (cases) 1 else 0, Modifier.weight(1f), fill = true) { cases = it == 1; prefs.edit().putBoolean("sales_cases", cases).apply() }
-            if (storesOnly) Box(Modifier.weight(1f))
+            Box(Modifier.weight(1f))
         }
 
         if (rows.isEmpty()) {
@@ -215,7 +213,7 @@ private fun SalesBrowser(v: Int, storesOnly: Boolean, onBack: () -> Unit) {
                 Muted(if (range == SalesRange.Today && back == 0) "Sales show up after today's End of Day import. Use the ‹ arrow to look at earlier days." else "Use the arrows to look at another ${range.unit}, or pick a different window.")
             }
         } else if (view == 0) {
-            SalesOverview(rows, promoWeeks, range, cases, packs, oneStore = false, visits = visitBasis)
+            SalesOverview(rows, promoWeeks, range, cases, packs, oneStore = false, visits = visitBasis, creditsByProduct = false)
         } else {
             val m = Measure(cases, packs)
             val selected = storeOpen.takeIf { sel -> sel.isNotEmpty() && rows.any { it.second.cusCode == sel } }
@@ -319,7 +317,7 @@ private class Measure(val cases: Boolean, val packs: Map<String, Double>) {
 private fun SalesOverview(
     rows: List<Pair<LocalDate, LineRow>>, promoWeeks: List<Pair<LocalDate, List<PromoWeekLine>>>,
     range: SalesRange, cases: Boolean, packs: Map<String, Double>, oneStore: Boolean,
-    visits: VisitBasis, store: String? = null, compact: Boolean = false,
+    visits: VisitBasis, store: String? = null, compact: Boolean = false, creditsByProduct: Boolean = true,
 ) {
     val m = Measure(cases, packs)
     val sales = rows.filter { !it.second.isReturn }
@@ -413,8 +411,8 @@ private fun SalesOverview(
         }
     }
 
-    // Credits added up by product over the whole window (buy backs listed apart).
-    if (credits.isNotEmpty()) Panel {
+    // Credits added up by product over the whole window (buy backs listed apart). Not on the Dashboard: Credits has its own page.
+    if (creditsByProduct && credits.isNotEmpty()) Panel {
         H2("Credits by product")
         Muted("Added up over this window, biggest first.", 13)
         val w = if (cases) listOf(3.2f, 0.8f, 1.1f) else listOf(3.2f, 0.8f, 1.1f, 1.2f)
