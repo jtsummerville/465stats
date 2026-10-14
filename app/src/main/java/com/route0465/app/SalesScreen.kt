@@ -1000,8 +1000,13 @@ private fun ReturnsPage(v: Int, buybacks: Boolean, onBack: () -> Unit) {
         Segmented(RETURN_RANGES.map { it.label }, ri, Modifier.fillMaxWidth(), fill = true) { ri = it; back = 0 }
         DateHeader(range.title(today, back).replace("\n", " "), back == 0, from, range.unit) { back = range.backFor(today, it) }
 
+        // Problem items: the last 8 freight weeks ending with the window, so a repeat shows even on a Day or Week view.
+        val fwEnd = Periods.freightWeekStart(to).plusDays(6)
+        val fw8 = remember(v, ri, back) { if (buybacks) emptyList() else repo.linesBetween(Periods.freightWeekStart(to).minusWeeks(7), fwEnd) }
+        val packs = remember(v) { repo.casePacks() }
         if (open != null) {
-            StoreReturns(rows.filter { it.second.cusCode == open }, open, sellers, creditsFirst = !buybacks)
+            if (buybacks) StoreReturns(rows.filter { it.second.cusCode == open }, open, sellers, creditsFirst = false)
+            else ProblemStoreDetail(open, rows.filter { it.second.cusCode == open }, fw8.filter { it.second.cusCode == open }, fwEnd, packs)
             return@ScreenColumn
         }
         val sales = rows.filter { !it.second.isReturn }
@@ -1046,6 +1051,10 @@ private fun ReturnsPage(v: Int, buybacks: Boolean, onBack: () -> Unit) {
         }
 
         val list = if (buybacks) buys else credits
+        if (!buybacks) {
+            ProblemItemsPanel(fw8, fwEnd, credits) { storeOpen = it }
+            return@ScreenColumn
+        }
         Panel(pad = 0.dp) {
             Text("By store, tap one for item by item", fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 8.dp))
             if (list.isEmpty()) Box(Modifier.padding(start = 20.dp, bottom = 16.dp)) { Muted(if (buybacks) "No buy backs in this window." else "No credits in this window.", 14) }
@@ -1130,4 +1139,177 @@ private fun storeSlices(byStore: List<Triple<String, String, Double>>): List<Pie
     val top = sorted.take(7).mapIndexed { i, (_, n, v) -> PieSlice(n, v, colors[i]) }
     val rest = sorted.drop(7)
     return top + PieSlice("Other (${rest.size} stores)", rest.sumOf { it.third }, Color(0xFF9AA39D), rest)
+}
+
+// ======================= Problem items (Credits page) =======================
+
+/** One store+item that keeps getting credited: which of the last 8 freight weeks it was credited in (index 0 = newest). */
+private class Problem(val cus: String, val store: String, val code: String, val name: String, val weeks: Set<Int>, val reason: String, val dollars: Double) {
+    val count get() = weeks.size
+    val lastFour get() = weeks.count { it < 4 }
+    val running get() = (0 until 4).takeWhile { it in weeks }.size
+}
+
+private fun freightWeekIndex(d: LocalDate, fwEnd: LocalDate): Int =
+    (ChronoUnit.DAYS.between(Periods.freightWeekStart(d), Periods.freightWeekStart(fwEnd)) / 7).toInt()
+
+/** Store+item pairs credited in 2+ of the last 8 freight weeks, from [fw8] (credits only, no buy backs). */
+private fun problems(fw8: List<Pair<LocalDate, LineRow>>, fwEnd: LocalDate): List<Problem> =
+    fw8.filter { it.second.isReturn && !it.second.isBuyback }
+        .groupBy { it.second.cusCode to it.second.code.uppercase() }
+        .mapNotNull { (_, l) ->
+            val weeks = l.map { freightWeekIndex(it.first, fwEnd) }.toSet()
+            if (weeks.size < 2) return@mapNotNull null
+            val top = l.groupBy { reasonOf(it.second) }.maxByOrNull { e -> e.value.size }!!.key
+            Problem(l.first().second.cusCode, l.first().second.store, l.first().second.code, l.first().second.name, weeks, top, l.sumOf { abs(it.second.net) })
+        }
+        .sortedWith(compareByDescending<Problem> { it.running }.thenByDescending { it.lastFour }.thenByDescending { it.count }.thenByDescending { it.dollars })
+
+@Composable
+private fun WeekDots(p: Problem) {
+    Row {
+        (3 downTo 0).forEach { w -> Text("●", fontSize = 14.sp, color = if (w in p.weeks) C.Red else C.Line, modifier = Modifier.padding(start = 2.dp)) }
+    }
+}
+
+@Composable
+private fun RepeatBadge(p: Problem) {
+    val label = when {
+        p.running >= 2 -> "${p.running} wks running"
+        p.lastFour >= 2 -> "${p.lastFour} of 4"
+        else -> null
+    } ?: return
+    Text(label, fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(8.dp)).background(C.Red).padding(horizontal = 7.dp, vertical = 1.dp))
+}
+
+@Composable
+private fun ReasonPill(reason: String) {
+    val ood = isOod(reason)
+    Text(reason.take(14), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (ood) C.Red else C.Amber,
+        modifier = Modifier.padding(start = 6.dp).clip(RoundedCornerShape(8.dp)).background(if (ood) C.RedSoft else C.AmberSoft).padding(horizontal = 7.dp, vertical = 1.dp))
+}
+
+@Composable
+private fun ProblemItemsPanel(fw8: List<Pair<LocalDate, LineRow>>, fwEnd: LocalDate, windowCredits: List<Pair<LocalDate, LineRow>>, openStore: (String) -> Unit) {
+    val probs = remember(fw8) { problems(fw8, fwEnd) }
+    var byItem by rememberSaveable { mutableStateOf(false) }
+    var showAll by rememberSaveable { mutableStateOf(false) }
+    val windowByStore = windowCredits.groupBy { it.second.cusCode }.mapValues { e -> e.value.sumOf { abs(it.second.net) } }
+    Panel {
+        H2("Problem items by store")
+        Muted("Items credited in 2 or more of the last 8 freight weeks, worst first. The dots are the last 4 freight weeks, newest on the right; red = credited that week.", 13)
+        Segmented(listOf("By store", "By item"), if (byItem) 1 else 0, Modifier.fillMaxWidth().padding(vertical = 6.dp), fill = true) { byItem = it == 1 }
+        if (probs.isEmpty()) Muted("Nothing's been credited in more than one of the last 8 freight weeks.", 14)
+        if (!byItem) {
+            val groups = probs.groupBy { it.cus }.entries.sortedByDescending { e -> windowByStore[e.key] ?: 0.0 }
+            val shown = if (showAll) groups else groups.take(3)
+            shown.forEach { (cus, ps) ->
+                Row(Modifier.fillMaxWidth().clickable { openStore(cus) }.padding(top = 10.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(ps.first().store, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+                    Muted("  · " + (windowByStore[cus]?.let { Fmt.money(it) + " in this window" } ?: "nothing in this window"), 12)
+                    Box(Modifier.weight(1f))
+                    Text("›", fontSize = 20.sp, color = C.Muted)
+                }
+                ps.forEach { p ->
+                    HorizontalDivider(color = C.Divider)
+                    Row(Modifier.fillMaxWidth().clickable { openStore(cus) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                            Text("${p.code} ${p.name}", fontSize = 13.sp, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+                            ReasonPill(p.reason); RepeatBadge(p)
+                        }
+                        WeekDots(p)
+                    }
+                }
+            }
+            if (groups.size > 3) Text(
+                if (showAll) "Show fewer" else "+ ${groups.size - 3} more stores", color = C.Green, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                modifier = Modifier.clickable { showAll = !showAll }.padding(vertical = 8.dp),
+            )
+        } else {
+            probs.groupBy { it.code.uppercase() }.entries.sortedByDescending { e -> e.value.sumOf { it.lastFour } }.forEach { (_, ps) ->
+                val top = ps.groupBy { it.reason }.maxByOrNull { e -> e.value.size }!!.key
+                Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${ps.first().code} ${ps.first().name}", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+                    Muted("  · $top · ${ps.size} store" + if (ps.size == 1) "" else "s", 12)
+                }
+                ps.forEach { p ->
+                    HorizontalDivider(color = C.Divider)
+                    Row(Modifier.fillMaxWidth().clickable { openStore(p.cus) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) { Text(p.store, fontSize = 13.sp); RepeatBadge(p) }
+                        WeekDots(p)
+                    }
+                }
+            }
+        }
+        val oneOff = windowByStore.keys.filter { cus -> probs.none { it.cus == cus } }
+        if (oneOff.isNotEmpty()) {
+            HorizontalDivider(color = C.Divider, modifier = Modifier.padding(top = 8.dp))
+            Muted("${oneOff.size} store" + (if (oneOff.size == 1) "" else "s") + " with only one-off credits in this window: " +
+                oneOff.joinToString(", ") { cus -> windowCredits.first { it.second.cusCode == cus }.second.store }, 12)
+        }
+    }
+}
+
+/** One store: each repeat item with sold vs credited by freight week, then everything else credited in the window. */
+@Composable
+private fun ProblemStoreDetail(cus: String, windowRows: List<Pair<LocalDate, LineRow>>, fw8: List<Pair<LocalDate, LineRow>>, fwEnd: LocalDate, packs: Map<String, Double>) {
+    val probs = remember(fw8) { problems(fw8, fwEnd).filter { it.cus == cus } }
+    val pack = { code: String -> packs[code.uppercase()]?.takeIf { it > 0 } ?: 1.0 }
+    probs.forEach { p ->
+        val mine = fw8.filter { it.second.code.equals(p.code, true) }
+        val sold4 = mine.filter { !it.second.isReturn && freightWeekIndex(it.first, fwEnd) < 4 }.sumOf { it.second.qty } / pack(p.code) / 4.0
+        val cred4 = mine.filter { it.second.isReturn && !it.second.isBuyback && freightWeekIndex(it.first, fwEnd) < 4 }.sumOf { it.second.qty } / 4.0
+        val buys = mine.count { it.second.isBuyback }
+        Panel {
+            Row(verticalAlignment = Alignment.CenterVertically) { Text("${p.code} ${p.name}", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, modifier = Modifier.weight(1f, fill = false)); RepeatBadge(p) }
+            Muted(
+                "Credited in ${p.count} of the last 8 freight weeks" + (if (p.running >= 2) ", every one of the last ${p.running}" else "") +
+                    ". Sells ${Fmt.one(sold4)} cs/wk here; credited ${Fmt.one(cred4)} ea/wk on average. Buy backs here: $buys.", 13,
+            )
+            val w = listOf(1.4f, 0.9f, 1.5f, 1.2f)
+            TableRow(listOf("Freight wk", "Sold", "Credited", "Reason"), w, header = true, endAligned = setOf(1, 2))
+            (0 until 4).forEach { wk ->
+                val ws = Periods.freightWeekStart(fwEnd).minusWeeks(wk.toLong())
+                val inWk = mine.filter { freightWeekIndex(it.first, fwEnd) == wk }
+                val sold = inWk.filter { !it.second.isReturn }.sumOf { it.second.qty } / pack(p.code)
+                val cr = inWk.filter { it.second.isReturn && !it.second.isBuyback }
+                HorizontalDivider(color = C.Divider)
+                TableRow(
+                    listOf("${ws.format(Fmt.md)}–${ws.plusDays(6).format(Fmt.md)}", Fmt.one(sold) + " cs",
+                        if (cr.isEmpty()) "—" else "${Fmt.qty(cr.sumOf { it.second.qty })} ea · ${Fmt.money(cr.sumOf { abs(it.second.net) })}",
+                        if (cr.isEmpty()) "" else cr.groupBy { reasonOf(it.second) }.keys.joinToString("/")),
+                    w, bold = setOf(2), endAligned = setOf(1, 2), color = C.Ink, small = setOf(0, 3),
+                )
+            }
+        }
+    }
+    val rest = windowRows.filter { it.second.isReturn && !it.second.isBuyback && probs.none { p -> p.code.equals(it.second.code, true) } }
+    Panel {
+        var show by remember { mutableStateOf(probs.isEmpty()) }
+        H2(if (probs.isEmpty()) "Credits here in this window" else "Everything else credited here")
+        if (rest.isEmpty()) Muted("None in this window.", 14)
+        else {
+            Expander("${rest.size} one-off credit" + (if (rest.size == 1) "" else "s") + ", ${Fmt.money(rest.sumOf { abs(it.second.net) })}", "", show) { show = !show }
+            if (show) rest.sortedByDescending { it.first }.forEach { (d, l) ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${d.format(Fmt.md)} · ${l.code} ${l.name} · ${Fmt.qty(l.qty)} ea", fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    ReasonPill(reasonOf(l))
+                    Text("  " + Fmt.money(abs(l.net)), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = C.Red)
+                }
+            }
+        }
+    }
+    val buys = windowRows.filter { it.second.isBuyback }
+    if (buys.isNotEmpty()) Panel {
+        H2("Buy backs here · " + Fmt.money(buys.sumOf { abs(it.second.net) }))
+        Muted("Not a loss. Full detail on the Buy backs page.", 13)
+        buys.groupBy { it.second.code }.forEach { (code, l) ->
+            HorizontalDivider(color = C.Divider)
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                Text("$code ${l.first().second.name}", fontSize = 14.sp, modifier = Modifier.weight(1f))
+                Text("${Fmt.qty(l.sumOf { it.second.qty })} ea", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
 }
