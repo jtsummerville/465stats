@@ -50,6 +50,7 @@ import java.time.LocalDate
 
 /** Setup is a menu of sections. Each section shows its settings read-only; changing anything takes Edit, then Save. */
 private enum class SetupSection(val title: String) {
+    Route("Route and pay periods"),
     Rates("Rates"),
     OrderGuide("Order guide"),
     Emails("Email addresses"),
@@ -75,6 +76,7 @@ fun SetupScreen(v: Int, bump: () -> Unit) {
     val back = { sectionName = "" }
     when (if (sectionName.isEmpty()) null else SetupSection.valueOf(sectionName)) {
         null -> SetupMenu(v) { sectionName = it.name }
+        SetupSection.Route -> RouteSection(bump, back)
         SetupSection.Rates -> RatesSection(v, bump, back)
         SetupSection.OrderGuide -> OrderGuideSection(v, bump, back)
         SetupSection.Emails -> EmailsSection(back)
@@ -99,6 +101,7 @@ private fun SetupMenu(v: Int, open: (SetupSection) -> Unit) {
         val last = repo.days().firstOrNull()
         val backups = if (XSales.hasAccess(ctx)) DataBackup.list() else emptyList()
         mapOf(
+            SetupSection.Route to "Route ${Prefs.routeNumber(ctx)}" + (if (Prefs.routeSource(ctx) == "xsales") " (from XSales)" else if (Prefs.routeSource(ctx) == "you") " (typed in)" else " (not read yet)") + " · pay periods from ${Periods.ANCHOR.format(Fmt.mdy)}",
             SetupSection.Rates to repo.rateSummary(),
             SetupSection.OrderGuide to "${order.size} products" + Prefs.orderEmail(ctx).let { if (it.isBlank()) "" else " · orders go to $it" },
             SetupSection.Emails to listOf(Prefs.orderEmail(ctx), Prefs.bossEmails(ctx)).filter { it.isNotBlank() }.joinToString(" · ").ifEmpty { "Not set yet" },
@@ -1067,4 +1070,43 @@ private fun freightAuto(delivery: java.time.DayOfWeek, freight: java.time.DayOfW
 private fun DayPicker(label: String, value: java.time.DayOfWeek, days: List<java.time.DayOfWeek>, onPick: (java.time.DayOfWeek) -> Unit) {
     Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = C.Muted, modifier = Modifier.padding(top = 6.dp))
     Segmented(days.map { it.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.US) }, days.indexOf(value), Modifier.fillMaxWidth(), fill = true) { onPick(days[it]) }
+}
+
+// ---------------------------------------------------------------- route and pay periods
+
+@Composable
+private fun RouteSection(bump: () -> Unit, back: () -> Unit) {
+    val ctx = LocalContext.current
+    var editing by remember { mutableStateOf(false) }
+    var route by remember { mutableStateOf(Prefs.routeNumberRaw(ctx)) }
+    var anchor by remember { mutableStateOf(Periods.ANCHOR.format(Fmt.mdy)) }
+    var error by remember { mutableStateOf<String?>(null) }
+    ScreenColumn {
+        SectionTop("Route and pay periods", back)
+        Panel {
+            if (!editing) {
+                ReadRow("Route number", Prefs.routeNumber(ctx) + when (Prefs.routeSource(ctx)) { "xsales" -> " · read from XSales"; "you" -> " · typed in by you"; else -> " · not read from XSales yet" })
+                ReadRow("Pay periods start", Periods.ANCHOR.format(Fmt.full) + ", then every 14 days")
+                Muted("The route number is read from XSales at each import and sync and goes on every email, PDF and printout. Pay periods are two Sat–Fri weeks; the current one is ${Periods.startOf(java.time.LocalDate.now()).format(Fmt.md)} – ${Periods.startOf(java.time.LocalDate.now()).plusDays(13).format(Fmt.md)}.", 13)
+            } else {
+                OutlinedTextField(route, { route = it.filter { c -> c.isLetterOrDigit() }.take(8) }, Modifier.fillMaxWidth(), label = { Text("Route number (blank = read it from XSales)") }, singleLine = true)
+                CalendarField("A Saturday that starts a pay period", anchor, Periods.ANCHOR, Modifier.fillMaxWidth()) { anchor = it }
+                Muted("Pick any day in a pay period's first week; the app lines every period up with that Saturday. Changing it re-dates every period, including which days are locked, so only change it if yours really run on the other week.", 13)
+            }
+            EditSaveRow(
+                editing,
+                onEdit = { route = Prefs.routeNumberRaw(ctx); anchor = Periods.ANCHOR.format(Fmt.mdy); error = null; editing = true },
+                onCancel = { editing = false; error = null },
+                onSave = {
+                    val d = parseLooseDate(anchor)
+                    if (d == null) error = "That date didn't read. Use MM/DD/YYYY." else {
+                        if (route.isBlank()) { Prefs.setRouteNumber(ctx, ""); Prefs.setRouteSource(ctx, "") } else { Prefs.setRouteNumber(ctx, route); Prefs.setRouteSource(ctx, "you") }
+                        Periods.saveAnchor(ctx, d)
+                        editing = false; error = null; bump()
+                    }
+                },
+            )
+            error?.let { Banner(it, C.AmberSoft, C.Amber) }
+        }
+    }
 }

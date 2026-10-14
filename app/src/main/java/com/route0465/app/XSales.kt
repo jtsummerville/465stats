@@ -193,6 +193,32 @@ object XSales {
     private fun hasTable(db: SQLiteDatabase, name: String): Boolean =
         db.list("SELECT 1 FROM sqlite_master WHERE type='table' AND name=? COLLATE NOCASE", arrayOf(name)) { 1 }.isNotEmpty()
 
+    /**
+     * The route number XSales is set up for. Looked for in the general table (any column named like
+     * rouCode / gnlRoute / route holding digits), then in routeStock / demandUp. Saved to Setup › Route
+     * unless the driver typed one in by hand.
+     */
+    private fun findRoute(db: SQLiteDatabase): String? {
+        for (t in listOf("general", "routeStock", "demandUp", "route")) {
+            if (!hasTable(db, t)) continue
+            val r = rows(db, "SELECT * FROM $t LIMIT 1").firstOrNull() ?: continue
+            val hit = r.entries.firstOrNull { (k, v) -> k.contains("rou") && !k.contains("group") && v?.trim()?.matches(Regex("[0-9]{2,6}")) == true }
+            if (hit != null) return hit.value!!.trim()
+        }
+        return null
+    }
+
+    private fun rememberRoute(ctx: Context, db: SQLiteDatabase) {
+        if (Prefs.routeSource(ctx) == "you") return
+        val r = findRoute(db) ?: return
+        if (r != Prefs.routeNumberRaw(ctx)) { Prefs.setRouteNumber(ctx, r); Prefs.setRouteSource(ctx, "xsales"); Db.get(ctx).log("Route number $r read from XSales") }
+    }
+
+    /** A product's barcode, from any column named like barcode / upc / ean / gtin, if XSales has one. */
+    private fun upcOf(r: Map<String, String?>): String? =
+        r.entries.firstOrNull { (k, v) -> (k.contains("barcode") || k.contains("upc") || k.contains("ean") || k.contains("gtin")) && v?.trim()?.matches(Regex("[0-9]{11,14}")) == true }
+            ?.value?.trim()?.let { if (it.length == 12) it else if (it.length == 13 && it.startsWith("0")) it.substring(1) else if (it.length == 11) "0$it" else null }
+
     private fun businessDate(db: SQLiteDatabase): LocalDate? {
         if (!hasTable(db, "general")) return null
         val r = rows(db, "SELECT * FROM general LIMIT 1").firstOrNull() ?: return null
@@ -242,8 +268,10 @@ object XSales {
         val stores = LinkedHashMap<String, String>()
         val names = LinkedHashMap<String, String>()
         val packs = HashMap<String, Double>()
+        val upcs = HashMap<String, String>()
         x.use { db ->
             if (!hasTable(db, "customer") && !hasTable(db, "product")) return fail("${src.name} has no customer or product list.")
+            rememberRoute(ctx, db)
             if (hasTable(db, "customer")) rows(db, "SELECT * FROM customer").forEach { r ->
                 val c = r.g("cusCode") ?: return@forEach
                 stores[c] = r.g("cusName")?.takeIf { it.isNotEmpty() } ?: c
@@ -251,9 +279,11 @@ object XSales {
             if (hasTable(db, "product")) rows(db, "SELECT * FROM product").forEach { r ->
                 val c = r.g("proCode") ?: return@forEach
                 names[c] = r.g("proName") ?: ""
+                upcOf(r)?.let { upcs[c] = it }
             }
             if (hasTable(db, "productUnit")) rows(db, "SELECT * FROM productUnit").forEach { r ->
                 val c = r.g("proCode") ?: return@forEach
+                if (c !in upcs) upcOf(r)?.let { upcs[c] = it }
                 val m = r.g("pruMultiplyBy")?.toDoubleOrNull() ?: return@forEach
                 if (m > (packs[c] ?: 0.0)) packs[c] = m
             }
@@ -271,6 +301,7 @@ object XSales {
                     put("code", code); put("name", name); put("case_pack", cp)
                 }, SQLiteDatabase.CONFLICT_IGNORE)
                 w.execSQL("UPDATE products SET name=?, case_pack=? WHERE code=? AND COALESCE(manual,0)=0", arrayOf<Any>(name, cp, code))
+                upcs[code]?.let { w.execSQL("UPDATE products SET upc=? WHERE code=?", arrayOf<Any>(it, code)) }
             }
             stores.forEach { (code, name) ->
                 w.insertWithOnConflict("stores", null, ContentValues().apply {
@@ -284,7 +315,8 @@ object XSales {
         }
         val newStores = stores.keys.count { it !in haveStores }
         val newProducts = names.keys.count { it !in haveProducts }
-        repo.log("Synced stores and products from ${src.name}: ${stores.size} stores ($newStores new), ${names.size} products ($newProducts new)")
+        Upc.reset()
+        repo.log("Synced stores and products from ${src.name}: ${stores.size} stores ($newStores new), ${names.size} products ($newProducts new)" + if (upcs.isNotEmpty()) ", ${upcs.size} barcodes" else ", no barcode column in XSales")
         return SyncResult(src.name, newStores, newProducts, stores.size, names.size)
     }
 
@@ -389,6 +421,7 @@ object XSales {
                 return ImportResult.WrongDate(src.path, fileDate, today, befToday)
             }
             if (!hasTable(db, "demandUp")) return ImportResult.Failed("$mainName has no tickets table (demandUp).")
+            rememberRoute(ctx, db)
 
             val storeNames = HashMap<String, String>()
             if (hasTable(db, "customer")) rows(db, "SELECT * FROM customer").forEach { r ->
@@ -484,7 +517,7 @@ object XSales {
             val linePay = lines.map { l ->
                 if (l.doc.voided) 0.0 else {
                     val rate = repo.rateFor(l.code, dayStr)
-                    if (rate == null || rate.marketRate == 0.0 || rate.commissionPct == 0.0) {
+                    if (rate == null || rate.marketRate == 0.0 || rate.commissionPct == 0.0 || (l.isReturn && !l.isBuyback && rate.creditPct == null)) {
                         missing += l.code; 0.0
                     } else {
                         repo.linePay(l.qty, rate, l.isReturn, l.isBuyback)

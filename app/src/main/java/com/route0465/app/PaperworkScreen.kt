@@ -236,7 +236,7 @@ fun PaperworkScreen(v: Int, bump: () -> Unit, shareMsg: MutableState<String?>) {
                             val storePdf = built.getOrElse { e -> message = "Couldn't build the store PDF: ${e.message}"; return@launch }
                             val files = listOfNotNull(eod?.let { File(it.path) }?.takeIf { it.isFile }, storePdf)
                             val perStore = photos.groupBy { it.store }.entries.joinToString("\n") { (s, l) -> "$s: ${l.size} page" + if (l.size == 1) "" else "s" }
-                            val body = "Route 0465 End of Day for ${day.format(Fmt.full)}.\n\n" +
+                            val body = "Route ${Prefs.routeNumber(ctx)} End of Day for ${day.format(Fmt.full)}.\n\n" +
                                 (if (eod != null) "Attached: XSales End of Day PDF" else "XSales End of Day PDF: not attached") +
                                 (if (storePdf != null) " and store paperwork (${storePdf.length() / 1024} KB).\n\n$perStore" else ".") +
                                 (if (noSale.isNotEmpty()) "\n\nStore visits with no sale:\n" + noSale.joinToString("\n") { "• ${it.store}: ${it.summary}" } else "")

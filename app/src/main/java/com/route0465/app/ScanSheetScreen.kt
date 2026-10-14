@@ -141,7 +141,7 @@ fun ScanSheetScreen(v: Int, go: (Screen) -> Unit) {
             if (PrinterPrefs.address(ctx).isBlank() && storeName.isNotBlank() && items.isNotEmpty()) gate { choosePrinter = true }
             return
         }
-        val sheet = SheetPrint(storeCode, storeName, day!!, route.trim().ifEmpty { "0465" },
+        val sheet = SheetPrint(storeCode, storeName, day!!, route.trim().ifEmpty { Prefs.routeNumber(ctx) },
             items.map { SheetLine(it.p.code, it.p.desc, it.p.upc, it.p.casePack, it.qty.toInt()) })
         gate {
             busy = true; msg = null

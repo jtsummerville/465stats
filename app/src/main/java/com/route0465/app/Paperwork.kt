@@ -129,8 +129,8 @@ object Paperwork {
         photos.sortedWith(compareBy({ it.takenAt }, { it.id })).forEach { groups.getOrPut(it.cusCode) { ArrayList() }.add(it) }
         val pages = groups.values.flatten().mapNotNull { uprightJpeg(it.path) }
         if (pages.isEmpty()) return null
-        val f = File(dayDir(ctx, date), "Store_paperwork_0465_$date.pdf")
-        writeJpegPdf(f, pages, "Route 0465 store paperwork ${date.format(Fmt.mdy)}")
+        val f = File(dayDir(ctx, date), "Store_paperwork_${Prefs.routeNumber(ctx)}_$date.pdf")
+        writeJpegPdf(f, pages, "Route ${Prefs.routeNumber(ctx)} store paperwork ${date.format(Fmt.mdy)}")
         return f
     }
 
@@ -212,7 +212,7 @@ object Paperwork {
             type = "application/pdf"
             val addrs = to.split(',', ';', ' ', '\n').map { it.trim() }.filter { it.contains('@') }
             if (addrs.isNotEmpty()) putExtra(Intent.EXTRA_EMAIL, addrs.toTypedArray())
-            putExtra(Intent.EXTRA_SUBJECT, "Invoices ${date.format(Fmt.mdy)} Route 0465")
+            putExtra(Intent.EXTRA_SUBJECT, "Invoices ${date.format(Fmt.mdy)} Route ${Prefs.routeNumber(ctx)}")
             putExtra(Intent.EXTRA_TEXT, body)
             if (uris.size == 1) putExtra(Intent.EXTRA_STREAM, uris[0]) else putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
             if (uris.isNotEmpty()) {

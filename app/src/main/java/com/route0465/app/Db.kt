@@ -64,7 +64,8 @@ data class Product(val code: String, val name: String, val casePack: Double)
 data class OrderItem(val code: String, val name: String, val position: Int, val qty: Int, val ranShort: Boolean = false, val shortBy: Int = 0)
 data class Promo(val id: Long, val code: String, val name: String, val store: String, val start: String, val end: String, val deal: String)
 data class Shortage(val id: Long, val date: String, val code: String, val name: String, val qty: Double, val kind: String)
-data class Rate(val marketRate: Double, val commissionPct: Double, val creditPct: Double)
+/** creditPct is null when no credit % was uploaded for the product: a credit line then can't be paid and is listed as missing. */
+data class Rate(val marketRate: Double, val commissionPct: Double, val creditPct: Double?)
 data class StorePhoto(val id: Long, val date: String, val cusCode: String, val store: String, val path: String, val takenAt: Long)
 data class EodPdf(val date: String, val path: String, val name: String, val receivedAt: String)
 
@@ -85,7 +86,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
         @Volatile
         private var inst: Db? = null
         fun get(ctx: Context): Db = inst ?: synchronized(this) {
-            inst ?: Db(ctx.applicationContext).also { inst = it; Schedule.load(ctx.applicationContext) }
+            inst ?: Db(ctx.applicationContext).also { inst = it; Schedule.load(ctx.applicationContext); Periods.loadAnchor(ctx.applicationContext) }
         }
 
         private val stamp = DateTimeFormatter.ofPattern("MM/dd/yyyy h:mm a", Locale.US)
@@ -145,6 +146,8 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
             val cols = db.list("PRAGMA table_info($t)") { it.getString(1) }
             if ("buyback" !in cols) db.execSQL("ALTER TABLE $t ADD COLUMN buyback INTEGER DEFAULT 0")
         }
+        // Barcode per product, synced from XSales when it has one (build 85+).
+        if ("upc" !in db.list("PRAGMA table_info(products)") { it.getString(1) }) db.execSQL("ALTER TABLE products ADD COLUMN upc TEXT DEFAULT ''")
         // Return reason per credit line (build 65+).
         if ("reason" !in db.list("PRAGMA table_info(lines)") { it.getString(1) }) db.execSQL("ALTER TABLE lines ADD COLUMN reason TEXT DEFAULT ''")
         // Stores and products you change yourself: manual = keep your version over XSales', hidden = removed by you.
@@ -338,7 +341,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
         val commission = qty * rate.marketRate * rate.commissionPct
         return when {
             isBuyback -> -commission
-            isReturn -> -(commission + qty * rate.marketRate * (1 - rate.creditPct))
+            isReturn -> -(commission + qty * rate.marketRate * (1 - (rate.creditPct ?: 0.0)))
             else -> commission
         }
     }
@@ -376,7 +379,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
                     val qty = l[3] as Double; val isReturn = l[4] as Boolean; val isBuyback = l[5] as Boolean
                     val pay = if (doc in voided) 0.0 else {
                         val rate = rateFor(code, date)
-                        if (rate == null || rate.marketRate == 0.0 || rate.commissionPct == 0.0) { missing += code; 0.0 }
+                        if (rate == null || rate.marketRate == 0.0 || rate.commissionPct == 0.0 || (isReturn && !isBuyback && rate.creditPct == null)) { missing += code; 0.0 }
                         else {
                             linePay(qty, rate, isReturn, isBuyback)
                         }
@@ -406,7 +409,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
             arrayOf(code, date)
         ) { c -> Pair(c.getDouble(0), if (c.isNull(1)) null else c.getDouble(1)) }.firstOrNull()
         if (mr == null && cm == null) return null
-        return Rate(mr ?: 0.0, cm?.first ?: 0.0, cm?.second ?: defaultCreditPct(code))
+        return Rate(mr ?: 0.0, cm?.first ?: 0.0, cm?.second)
     }
 
     fun rateSummary(): String {
@@ -457,6 +460,10 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
             "WHERE l.date>=? AND l.date<=? AND d.voided=0 AND l.is_return=0 GROUP BY l.date, l.code",
         arrayOf(from.toString(), to.toString())
     ) { c -> Triple(LocalDate.parse(c.getString(0)), c.getString(1), c.getDouble(2)) }
+
+    /** Product UPCs synced from XSales (code → 12-digit UPC), uppercase keys. */
+    fun productUpcs(): Map<String, String> =
+        readableDatabase.list("SELECT code, upc FROM products WHERE COALESCE(upc,'')<>''") { c -> c.getString(0).uppercase() to c.getString(1) }.toMap()
 
     fun casePacks(): Map<String, Double> =
         readableDatabase.list("SELECT code, case_pack FROM products") { c -> c.getString(0).uppercase() to c.getDouble(1) }.toMap()

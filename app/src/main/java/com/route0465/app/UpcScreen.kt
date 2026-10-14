@@ -57,14 +57,29 @@ object Upc {
     @Volatile
     private var cache: List<UpcItem>? = null
 
+    fun reset() { cache = null }
+
+    /** The built-in Ole list, with any barcodes synced from XSales laid over it (XSales wins; new products are added). */
     fun all(ctx: Context): List<UpcItem> = cache ?: synchronized(this) {
         cache ?: run {
             val text = ctx.assets.open("upc.json").bufferedReader().use { it.readText() }
             val arr = JSONArray(text)
-            List(arr.length()) { i ->
+            val builtIn = List(arr.length()) { i ->
                 val r = arr.getJSONArray(i)
                 UpcItem(r.getString(0), r.getString(1), r.getString(2), r.getString(3), r.getString(4))
-            }.also { cache = it }
+            }
+            val repo = Db.get(ctx)
+            val synced = runCatching { repo.productUpcs() }.getOrDefault(emptyMap())
+            if (synced.isEmpty()) builtIn.also { cache = it }
+            else {
+                val names = runCatching { repo.casePacks().keys.associateWith { repo.productName(it) } }.getOrDefault(emptyMap())
+                val seen = HashSet<String>()
+                val merged = builtIn.map { p ->
+                    seen += p.code.uppercase()
+                    synced[p.code.uppercase()]?.let { u -> if (u != p.upc) p.copy(upc = u, note = "from XSales") else p } ?: p
+                } + synced.filterKeys { it !in seen }.map { (code, u) -> UpcItem(code, names[code] ?: code, "", u, "from XSales") }
+                merged.also { cache = it }
+            }
         }
     }
 

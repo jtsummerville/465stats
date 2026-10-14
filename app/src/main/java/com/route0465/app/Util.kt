@@ -27,9 +27,21 @@ object Fmt {
     val fileMd: DateTimeFormatter = DateTimeFormatter.ofPattern("MM-dd", Locale.US)
 }
 
-/** 14-day pay periods (two Saturday–Friday weeks) counted from 07/11/2026. */
+/** 14-day pay periods (two Saturday–Friday weeks) counted from an anchor: 07/11/2026 unless Setup › Route changes it. */
 object Periods {
-    val ANCHOR: LocalDate = LocalDate.of(2026, 7, 11)
+    val DEFAULT_ANCHOR: LocalDate = LocalDate.of(2026, 7, 11)
+    var ANCHOR: LocalDate = DEFAULT_ANCHOR
+
+    fun loadAnchor(ctx: Context) {
+        ANCHOR = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("pay_anchor", null)
+            ?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: DEFAULT_ANCHOR
+    }
+
+    /** Any Saturday that starts a pay period; the app lines every period up with it. */
+    fun saveAnchor(ctx: Context, d: LocalDate) {
+        ctx.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putString("pay_anchor", weekStart(d).toString()).apply()
+        loadAnchor(ctx)
+    }
 
     fun startOf(d: LocalDate): LocalDate {
         val days = ChronoUnit.DAYS.between(ANCHOR, d)
@@ -127,15 +139,16 @@ fun parseLooseDate(s: String?, today: LocalDate = LocalDate.now()): LocalDate? {
     return null
 }
 
-/** Credit % default when a rate upload leaves it blank: GV 2933–2938 = 10%, others 16%. */
-fun defaultCreditPct(code: String): Double =
-    if (code.trim() in setOf("2933", "2934", "2935", "2936", "2937", "2938")) 0.10 else 0.16
-
 object Prefs {
     private fun sp(ctx: Context) = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     /** Route number, for emails and PDFs. 0465 until Setup gets a box for it. */
-    fun routeNumber(ctx: Context): String = sp(ctx).getString("route_number", "0465")?.ifBlank { "0465" } ?: "0465"
+    fun routeNumber(ctx: Context): String = sp(ctx).getString("route_number", "")?.ifBlank { "0465" } ?: "0465"
+    fun routeNumberRaw(ctx: Context): String = sp(ctx).getString("route_number", "") ?: ""
+    fun setRouteNumber(ctx: Context, v: String) = sp(ctx).edit().putString("route_number", v.trim()).apply()
+    /** Where the route number came from: "xsales" or "you". */
+    fun routeSource(ctx: Context): String = sp(ctx).getString("route_source", "") ?: ""
+    fun setRouteSource(ctx: Context, v: String) = sp(ctx).edit().putString("route_source", v).apply()
     /** The driver's own address: where the expense report goes. */
     fun myEmail(ctx: Context): String = sp(ctx).getString("my_email", "") ?: ""
     fun setMyEmail(ctx: Context, v: String) = sp(ctx).edit().putString("my_email", v.trim()).apply()

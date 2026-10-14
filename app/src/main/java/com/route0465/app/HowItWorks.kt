@@ -54,7 +54,8 @@ val HOW_TOPICS: List<HowTopic> = listOf(
         "pay", "Pay", "Commission math, credits and pay periods",
         listOf(
             "Recurring expenses" to "Set on the Expenses tab (name, dollars a week, start week). Each Sat–Fri pay week it's running, it comes out of that week's pay on the Pay page and out of the period total, route days or not. Stop takes effect after the current week; Remove takes it out of every week. Stored day pay never changes, so a locked period's pay stays as it was: only the amount shown after expenses moves. One-time expenses never touch pay.",
-            "Rates used" to "For each product the app uses the market rate and the commission % / credit % in effect on that day: the newest rate whose effective date is on or before the day.",
+            "Rates used" to "For each product the app uses the market rate and the commission % / credit % in effect on that day: the newest rate whose effective date is on or before the day. There are no built-in defaults: a product with no market rate or no commission % pays $0 and is listed under rates missing, and a credit on a product with no credit % does the same, because every route has its own rates.",
+            "Pay periods" to "Two Sat–Fri weeks. They're lined up with the date in Setup › Route and pay periods (07/11/2026 unless changed). A period locks 5 days after it ends.",
             "A sale line" to "cases or units × market rate × commission %.",
             "A credit (return) line" to "−(qty × market rate × commission %) − qty × market rate × (1 − credit %). You lose the commission you earned, plus the part of the product's value Ole doesn't credit back.",
             "Which lines are credits" to "Same as Taco-Boys. Sales are the units sold on invoices. Credits and buy backs are the returned-product list from End of Day (what Taco-Boys reads as TOTAL RETURNS), one line per product with its reason. A return on a buy-back ticket or with the Buy Back reason is a buy back; every other return is a credit pickup. The reason (damaged, out of date and so on) never changes pay.",
@@ -65,6 +66,15 @@ val HOW_TOPICS: List<HowTopic> = listOf(
             "Voids" to "Voided tickets pay nothing.",
             "Pay periods" to "14 days: two Saturday–Friday weeks, counted from Sat 07/11/2026. The pay is figured when the day is imported, using the rates in effect on that day's own date.",
             "Locked pay" to "A pay period locks 5 days after it ends (the Thursday after its last Friday). Until then, uploading rates refigures its days, so a missing or wrong rate can still be fixed. Once locked, its pay is final and nothing changes it, not even a back-dated rate.",
+        ),
+    ),
+    HowTopic(
+        "route", "Route and setup", "Route number, pay period start, the Home checklist",
+        listOf(
+            "Route number" to "Read from XSales at every import and sync (the first column named like route in its general table that holds digits). It goes on the rail, every email, PDF and printout. Typing one in Setup › Route and pay periods overrides XSales until you blank it out again.",
+            "Pay period start" to "Any Saturday that starts a pay period; every period is counted in 14-day steps from it. Change it only if your pay periods run on the other week.",
+            "Getting set up" to "Home shows a checklist on a fresh install: file access, the XSales folder, a sync, the route number, rates, order schedule and guide, emails, a backup password, and the printer. Each line opens the Setup section for it. It disappears when everything's done (the printer is optional once a day has been imported).",
+            "Barcodes" to "The UPC list is built in. When XSales' product list has a barcode column, Sync from XSales reads it and those barcodes take over for matching products, and new products get added; the sync log says how many. With no barcode column, the built-in list stays as is.",
         ),
     ),
     HowTopic(

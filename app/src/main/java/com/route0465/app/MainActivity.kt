@@ -159,7 +159,7 @@ fun AppRoot(version: MutableState<Int>, goTo: MutableState<Screen?>, shareMsg: M
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Spacer(Modifier.height(10.dp))
-                Text("0465", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
+                Text(Prefs.routeNumber(LocalContext.current), color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
                 Spacer(Modifier.height(10.dp))
                 Screen.entries.forEach { s ->
                     NavigationRailItem(
@@ -214,7 +214,7 @@ private fun Header(title: String, v: Int) {
     ) {
         Column(Modifier.weight(1f)) {
             Text(title, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, color = C.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("Route 0465 · ${today.format(Fmt.full)}", fontSize = 15.sp, color = C.Muted, maxLines = 1)
+            Text("Route ${Prefs.routeNumber(LocalContext.current)} · ${today.format(Fmt.full)}", fontSize = 15.sp, color = C.Muted, maxLines = 1)
         }
         val label = when {
             importedToday -> "Imported today"

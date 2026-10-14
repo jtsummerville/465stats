@@ -90,7 +90,7 @@ object RatesImport {
                     val cr = pct(cell("credit_pct"))
                     w.insertWithOnConflict("comm_rates", null, ContentValues().apply {
                         put("code", code); put("effective_date", eff); put("commission_pct", cp)
-                        if (cr != null) put("credit_pct", cr) else putNull("credit_pct")
+                        if (cr != null) put("credit_pct", cr) else { putNull("credit_pct"); if (notes.size < 5) notes += "Row ${ri + 1} ($code): no credit %, so credits on it can't be paid until one is uploaded." }
                     }, SQLiteDatabase.CONFLICT_REPLACE)
                     comm++
                 } else if (cell("credit_pct")?.isNotBlank() == true) {
