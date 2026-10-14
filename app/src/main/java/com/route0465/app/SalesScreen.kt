@@ -671,7 +671,7 @@ internal fun isOod(reason: String): Boolean {
 
 private fun reasonOf(l: LineRow) = l.reason.ifBlank { "Reason not recorded" }
 
-/** Freight-week sales targets your manager gives you, saved per week (keyed by the Wednesday). */
+/** Freight-week sales targets your manager gives you, saved per week (keyed by the week's first day). */
 internal object FreightTargets {
     private fun prefs(ctx: android.content.Context) = ctx.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
     fun get(ctx: android.content.Context, wed: LocalDate): Double? =

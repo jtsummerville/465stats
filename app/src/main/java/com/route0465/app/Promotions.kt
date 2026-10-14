@@ -82,14 +82,13 @@ object SaleTypes {
 }
 
 /**
- * The order-to-order cycle for the order due next (route 0465: order due Wednesday by midnight,
- * Ole orders Thursday, delivery the Tuesday after; the cycle runs to the next Tuesday delivery).
+ * The order-to-order cycle for the order due next: the first Schedule.deliveryDay after the due day,
+ * running to the next delivery (route 0465: due Wednesday, delivered the Tuesday after).
  * Returns [delivery, nextDelivery).
  */
 fun orderCycle(today: LocalDate = LocalDate.now()): Pair<LocalDate, LocalDate> {
-    val oleOrder = nextOrderDue(today).plusDays(1)
-    var delivery = oleOrder.plusDays(1)
-    while (delivery.dayOfWeek != DayOfWeek.TUESDAY) delivery = delivery.plusDays(1)
+    var delivery = nextOrderDue(today).plusDays(1)
+    while (delivery.dayOfWeek != Schedule.deliveryDay) delivery = delivery.plusDays(1)
     return delivery to delivery.plusDays(7)
 }
 

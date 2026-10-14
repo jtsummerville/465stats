@@ -45,9 +45,9 @@ object Periods {
 
     fun isLocked(d: LocalDate, today: LocalDate = LocalDate.now()): Boolean = !today.isBefore(lockDate(d))
 
-    /** Wednesday that starts the Wed–Tue freight week holding [d] (new freight comes in on Wednesdays). */
+    /** The day that starts the freight week holding [d] (Schedule.freightDay, Wednesday for route 0465). */
     fun freightWeekStart(d: LocalDate): LocalDate {
-        val back = (d.dayOfWeek.value - DayOfWeek.WEDNESDAY.value + 7) % 7
+        val back = (d.dayOfWeek.value - Schedule.freightDay.value + 7) % 7
         return d.minusDays(back.toLong())
     }
 
@@ -58,9 +58,47 @@ object Periods {
     }
 }
 
-/** Order deadline: Wednesday by midnight (today if today is Wednesday). */
+/**
+ * The route's order schedule, set in Setup › Order guide. Defaults are Ole's for route 0465:
+ * order due Wednesday by midnight, delivered the following Tuesday, new freight (freight week) starts Wednesday.
+ * Loaded from prefs once at start (Db.get) and again when Setup saves it.
+ */
+object Schedule {
+    var dueDay: DayOfWeek = DayOfWeek.WEDNESDAY
+    /** Minutes after midnight, 0..1439. 1439 = 11:59 PM, shown as "by midnight". */
+    var dueMinutes: Int = 1439
+    var deliveryDay: DayOfWeek = DayOfWeek.TUESDAY
+    var freightDay: DayOfWeek = DayOfWeek.WEDNESDAY
+
+    fun load(ctx: Context) {
+        val sp = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
+        dueDay = DayOfWeek.of(sp.getInt("sched_due_day", DayOfWeek.WEDNESDAY.value))
+        dueMinutes = sp.getInt("sched_due_minutes", 1439).coerceIn(0, 1439)
+        deliveryDay = DayOfWeek.of(sp.getInt("sched_delivery_day", DayOfWeek.TUESDAY.value))
+        freightDay = DayOfWeek.of(sp.getInt("sched_freight_day", DayOfWeek.WEDNESDAY.value))
+    }
+
+    fun save(ctx: Context, due: DayOfWeek, minutes: Int, delivery: DayOfWeek, freight: DayOfWeek) {
+        ctx.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
+            .putInt("sched_due_day", due.value).putInt("sched_due_minutes", minutes.coerceIn(0, 1439))
+            .putInt("sched_delivery_day", delivery.value).putInt("sched_freight_day", freight.value).apply()
+        load(ctx)
+    }
+
+    /** "by midnight", "by 5:00 PM". */
+    val dueTimeText: String get() {
+        if (dueMinutes >= 1439) return "by midnight"
+        val h = dueMinutes / 60; val m = dueMinutes % 60
+        val h12 = if (h % 12 == 0) 12 else h % 12
+        return "by " + String.format(Locale.US, "%d:%02d %s", h12, m, if (h < 12) "AM" else "PM")
+    }
+
+    fun dayName(d: DayOfWeek): String = d.getDisplayName(java.time.format.TextStyle.FULL, Locale.US)
+}
+
+/** Order deadline: the next due day (today if today is the due day). */
 fun nextOrderDue(today: LocalDate = LocalDate.now()): LocalDate {
-    val ahead = (DayOfWeek.WEDNESDAY.value - today.dayOfWeek.value + 7) % 7
+    val ahead = (Schedule.dueDay.value - today.dayOfWeek.value + 7) % 7
     return today.plusDays(ahead.toLong())
 }
 

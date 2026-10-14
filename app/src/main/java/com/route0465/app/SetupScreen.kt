@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package com.route0465.app
 
 import android.content.Context
@@ -762,6 +763,7 @@ private fun OrderGuideSection(v: Int, bump: () -> Unit, back: () -> Unit) {
 
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionTop("Order guide", back)
+        SchedulePanel()
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedTextField(q, { q = it }, Modifier.weight(1f), singleLine = true, label = { Text("Find in your order guide") })
             if (!editing) SecondaryButton("Edit", Modifier.height(56.dp)) { editing = true } else PrimaryButton("Done", Modifier.height(56.dp)) { editing = false }
@@ -1006,4 +1008,63 @@ private fun AboutSection(back: () -> Unit) {
             ReadRow("Copyright", "© 2026 465stats")
         }
     }
+}
+
+/** Order due day and time, delivery day, freight-week start. Locked until Edit, like the rest of Setup. */
+@Composable
+private fun SchedulePanel() {
+    val ctx = LocalContext.current
+    var editing by remember { mutableStateOf(false) }
+    var due by remember { mutableStateOf(Schedule.dueDay) }
+    var minutes by remember { mutableStateOf(Schedule.dueMinutes) }
+    var delivery by remember { mutableStateOf(Schedule.deliveryDay) }
+    var freight by remember { mutableStateOf(Schedule.freightDay) }
+    var pickTime by remember { mutableStateOf(false) }
+    val days = java.time.DayOfWeek.values().toList()
+    Panel {
+        Text("Order schedule", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+        if (!editing) {
+            ReadRow("Order due", "${Schedule.dayName(Schedule.dueDay)} ${Schedule.dueTimeText}")
+            ReadRow("Delivered", Schedule.dayName(Schedule.deliveryDay))
+            ReadRow("Freight week starts", Schedule.dayName(Schedule.freightDay))
+            Muted("Used by the Order screen, the order email and PDF, Suggested, promo tags, and Sales › Freight week.", 13)
+        } else {
+            DayPicker("Order due", due, days) { due = it; freight = if (freightAuto(delivery, Schedule.freightDay)) delivery.plus(1) else freight }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Due time", fontSize = 15.sp, modifier = Modifier.weight(1f))
+                SecondaryButton(if (minutes >= 1439) "Midnight" else Schedule.dueTimeText.removePrefix("by ")) { pickTime = true }
+            }
+            DayPicker("Delivered", delivery, days) { delivery = it; freight = it.plus(1) }
+            DayPicker("Freight week starts", freight, days) { freight = it }
+            Muted("Freight week starts the day after delivery unless you pick another day.", 13)
+        }
+        EditSaveRow(
+            editing,
+            onEdit = { due = Schedule.dueDay; minutes = Schedule.dueMinutes; delivery = Schedule.deliveryDay; freight = Schedule.freightDay; editing = true },
+            onCancel = { editing = false },
+            onSave = { Schedule.save(ctx, due, minutes, delivery, freight); editing = false },
+        )
+    }
+    if (pickTime) {
+        val state = androidx.compose.material3.rememberTimePickerState(initialHour = minutes / 60, initialMinute = minutes % 60, is24Hour = false)
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { pickTime = false },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { minutes = state.hour * 60 + state.minute; pickTime = false }) { Text("OK", fontWeight = FontWeight.Bold) } },
+            dismissButton = {
+                Row {
+                    androidx.compose.material3.TextButton(onClick = { minutes = 1439; pickTime = false }) { Text("Midnight") }
+                    androidx.compose.material3.TextButton(onClick = { pickTime = false }) { Text("Cancel") }
+                }
+            },
+            text = { androidx.compose.material3.TimePicker(state = state) },
+        )
+    }
+}
+
+private fun freightAuto(delivery: java.time.DayOfWeek, freight: java.time.DayOfWeek) = freight == delivery.plus(1)
+
+@Composable
+private fun DayPicker(label: String, value: java.time.DayOfWeek, days: List<java.time.DayOfWeek>, onPick: (java.time.DayOfWeek) -> Unit) {
+    Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = C.Muted, modifier = Modifier.padding(top = 6.dp))
+    Segmented(days.map { it.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.US) }, days.indexOf(value), Modifier.fillMaxWidth(), fill = true) { onPick(days[it]) }
 }

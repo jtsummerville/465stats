@@ -118,7 +118,7 @@ fun OrderScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Order deadline", fontSize = 14.sp, color = C.Amber, fontWeight = FontWeight.SemiBold)
-                        Text((if (due == LocalDate.now()) "Today" else due.format(Fmt.day)) + " by midnight", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                        Text((if (due == LocalDate.now()) "Today" else due.format(Fmt.day)) + " " + Schedule.dueTimeText, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text("Cases ordered", fontSize = 14.sp, color = C.Amber, fontWeight = FontWeight.SemiBold)

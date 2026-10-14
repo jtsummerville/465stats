@@ -85,7 +85,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
         @Volatile
         private var inst: Db? = null
         fun get(ctx: Context): Db = inst ?: synchronized(this) {
-            inst ?: Db(ctx.applicationContext).also { inst = it }
+            inst ?: Db(ctx.applicationContext).also { inst = it; Schedule.load(ctx.applicationContext) }
         }
 
         private val stamp = DateTimeFormatter.ofPattern("MM/dd/yyyy h:mm a", Locale.US)

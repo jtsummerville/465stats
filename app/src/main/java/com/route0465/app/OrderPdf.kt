@@ -46,8 +46,8 @@ object OrderPdf {
         var page = doc.startPage(PdfDocument.PageInfo.Builder(612, 792, pageNo).create())
         var c = page.canvas
         var y = 56f
-        c.drawText("Route 0465 order", 48f, y, title); y += 22f
-        c.drawText("${due.format(Fmt.mdy)} · $total cases · Market rate value: ${Fmt.money(dollars)}", 48f, y, body); y += 16f
+        c.drawText("Route ${Prefs.routeNumber(ctx)} order", 48f, y, title); y += 22f
+        c.drawText("Due ${due.format(Fmt.mdy)} · delivery ${orderCycle(due).first.format(Fmt.mdy)} · $total cases · Market rate value: ${Fmt.money(dollars)}", 48f, y, body); y += 16f
         if (noRate > 0) {
             c.drawText("Dollar total leaves out $noRate product" + (if (noRate == 1) "" else "s") + " with no market rate.", 48f, y, body); y += 16f
         }
@@ -123,8 +123,9 @@ object OrderPdf {
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "application/pdf"
             if (to.isNotBlank()) putExtra(Intent.EXTRA_EMAIL, arrayOf(to))
-            putExtra(Intent.EXTRA_SUBJECT, "Route 0465 order, due ${due.format(Fmt.day)}")
-            putExtra(Intent.EXTRA_TEXT, "Route 0465 order attached ($cases cases).")
+            val delivery = orderCycle(due).first
+            putExtra(Intent.EXTRA_SUBJECT, "Route ${Prefs.routeNumber(ctx)} order, due ${due.format(Fmt.day)}")
+            putExtra(Intent.EXTRA_TEXT, "Route ${Prefs.routeNumber(ctx)} order attached ($cases cases), due ${due.format(Fmt.day)} ${Schedule.dueTimeText}, for delivery ${delivery.format(Fmt.day)}.")
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }

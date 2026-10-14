@@ -123,7 +123,7 @@ fun HomeScreen(v: Int, bump: () -> Unit, go: (Screen) -> Unit) {
                 Panel(Modifier.fillMaxWidth(), bg = C.AmberSoft, line = C.AmberLine, onClick = { go(Screen.Order) }) {
                     Text("Next order due", fontSize = 14.sp, color = C.Amber, fontWeight = FontWeight.SemiBold)
                     Text(
-                        (if (due == today) "Today" else due.format(Fmt.day)) + " by midnight",
+                        (if (due == today) "Today" else due.format(Fmt.day)) + " " + Schedule.dueTimeText,
                         fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = C.Ink,
                     )
                 }
