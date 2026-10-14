@@ -182,14 +182,14 @@ fun ShortagesScreen(v: Int, bump: () -> Unit) {
             s.id to Worth(value, value?.let { it * (rate.commissionPct.let { p -> if (p > 1) p / 100 else p }) })
         }
     }
-    val thisWeek = Periods.weekStart(LocalDate.now())
-    val weeks = list.groupBy { Periods.weekStart(parseLooseDate(it.date) ?: LocalDate.now()) }.toSortedMap(compareByDescending { it })
+    val thisWeek = Periods.freightWeekStart(LocalDate.now())
+    val weeks = list.groupBy { Periods.freightWeekStart(parseLooseDate(it.date) ?: LocalDate.now()) }.toSortedMap(compareByDescending { it })
 
     ScreenColumn {
         Split {
             Panel(Modifier.part(1.4f)) {
                 H2("Shortages")
-                Muted("Value = cases × case pack × market rate that day. Lost pay = the commission you'd have made on it.", 13)
+                Muted("Grouped by freight week. Value = cases × case pack × market rate that day. Lost pay = the commission you'd have made on it.", 13)
                 if (list.isEmpty()) Muted("None logged.")
                 weeks.forEach { (ws, items) ->
                     val value = items.sumOf { worth[it.id]?.value ?: 0.0 }
@@ -198,7 +198,7 @@ fun ShortagesScreen(v: Int, bump: () -> Unit) {
                     HorizontalDivider(color = C.Divider)
                     Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text((if (ws == thisWeek) "This week · " else "Week of ") + "${ws.format(Fmt.md)} – ${ws.plusDays(6).format(Fmt.md)}", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = C.GreenDark)
+                            Text((if (ws == thisWeek) "This freight week · " else "Freight week ") + "${ws.format(Fmt.md)} – ${ws.plusDays(6).format(Fmt.md)}", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = C.GreenDark)
                             Muted("${Fmt.qty(items.sumOf { it.qty })} cases short" + if (noRate > 0) " · $noRate with no market rate" else "", 13)
                         }
                         Column(horizontalAlignment = Alignment.End) {
