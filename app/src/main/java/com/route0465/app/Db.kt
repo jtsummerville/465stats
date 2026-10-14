@@ -131,6 +131,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "route0465.db
         db.execSQL("CREATE TABLE IF NOT EXISTS store_photos(id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, cus_code TEXT, store TEXT, path TEXT, taken_at INTEGER)")
         db.execSQL("CREATE TABLE IF NOT EXISTS eod_pdfs(date TEXT PRIMARY KEY, path TEXT, name TEXT, received_at TEXT)")
         Expenses.tables(db)
+        InventoryAudit.tables(db)
         db.execSQL("CREATE TABLE IF NOT EXISTS no_sale_visits(date TEXT, int_code TEXT, cus_code TEXT, store TEXT, summary TEXT, PRIMARY KEY(date, int_code))")
         createPromoTables(db)
         db.execSQL("CREATE TABLE IF NOT EXISTS order_history(delivery TEXT, code TEXT, ordered INTEGER, suggested INTEGER, ran_short INTEGER, short_by INTEGER)")

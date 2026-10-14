@@ -93,16 +93,14 @@ val HOW_TOPICS: List<HowTopic> = listOf(
         ),
     ),
     HowTopic(
-        "inventory", "Inventory", "Cases on hand and Inventory Check",
+        "inventory", "Inventory", "Cases on hand and the Inventory Audit",
         listOf(
             "Cases on hand" to "From truck stock in the last import: units on hand ÷ case pack. The case pack is the largest unit multiplier XSales has for that product.",
             "Total cases" to "The sum of cases on hand across every product.",
-            "Inventory Check" to "Taco-Boys' check, in eaches, for each product between two imports: last count − sold + buy backs + delivered should equal what's on the truck now. Use the arrows to step back through earlier imports.",
-            "Credits in the check" to "Credit pickups are not subtracted: they never go back into sellable stock. Buy backs are added, because they go back on the truck and get resold. A product that was also credited back says so as context.",
-            "Delivered" to "XSales' reload for each product on the days in between.",
-            "Went missing and appeared" to "Product that left the truck with no sale, buy back or delivery behind it, and product that showed up with nothing to explain it. Both are findings, listed separately and never netted against each other. Value is the eaches off × market rate.",
-            "Delivery periods" to "If 6 or more products go up by 150+ eaches in total, it looks like freight that wasn't recorded as delivered. Then increases can't be told from restock, and only a drop bigger than what came in can show. That's said on the screen, never called clean.",
-            "Missing imports" to "If the route ran on a day with no import in between (weekdays learned from your own imports), the screen says so: the finding happened somewhere in that stretch, not on one particular day.",
+            "Inventory Audit" to "Taco-Boys' audit, driver side. Pick an import, count the truck, and type cases and eaches for each product. On tablet = that import's on-hand eaches split into whole cases and leftover eaches. Counts are saved as you type and kept per import date; Clear this count throws one away after asking.",
+            "The fix" to "The Ole tablet can only add eaches or subtract whole cases, never add cases. So if you counted more, the fix is + that many eaches; if you counted less, it's subtract enough whole cases to cover it and add back the remainder as eaches. Figured on total pieces from the case pack.",
+            "Blank rows" to "A row left blank is not counted, never 0. Counting a product and finding none is a different fact from not getting to it.",
+            "Keyed into XSales" to "Tick the box once you've entered the fixes on the XSales tablet; the date is stamped only when you tick it. A saved count is the paper trail for that correction: without it, the jump looks like product going missing.",
         ),
     ),
     HowTopic(
