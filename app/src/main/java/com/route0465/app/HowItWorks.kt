@@ -9,6 +9,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,7 +72,9 @@ val HOW_TOPICS: List<HowTopic> = listOf(
         listOf(
             "Two separate histories" to "Market rates and commission/credit % are stored separately, each with an effective date, like Taco-Boys. Uploading a new sheet adds new dated rows; older ones stay for older days.",
             "Effective date" to "You're asked for the date the sheet takes effect. Days before it keep using the older rates.",
-            "Columns" to "The app finds the product code, market rate, commission % and credit % columns by their headings. A row with credit % but no commission % is skipped and noted.",
+            "Columns" to "The app finds the product code, market rate, commission % and credit % columns by their headings, in any order; capitals don't matter and extra columns are ignored. Headings it knows: Code (or Item code, Product code, Item number, SKU, Item); Market rate (or Rate, Price); Commission (or Commission %); Credit (or Credit %); Effective date (or Date, Start date). A row with credit % but no commission % is skipped and noted.",
+            "What the sheet looks like" to "CSV or Excel, one header row, then one row per product. Keep leading zeros on codes (0092, not 92): in Excel, make the Code column Text. 18, 18% and 0.18 all mean 18%. Effective date is optional; when it's there it wins over the date the upload asks for.",
+            "Example" to "TABLE|Code|Market rate|Commission|Credit|Effective date\n0092|2.49|18|16|01/01/2026\n2560f|3.19|18|16|01/01/2026\n2933|1.89|8|10|01/01/2026\n10111|2.79|18|16|01/01/2026",
         ),
     ),
     HowTopic(
@@ -240,11 +248,31 @@ fun HowItWorksSection(back: () -> Unit) {
                     entries.forEach { (term, rule) ->
                         Column {
                             Text(term, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = C.GreenDark)
-                            Text(rule, fontSize = 15.sp, lineHeight = 21.sp)
+                            if (rule.startsWith("TABLE|")) ExampleTable(rule.removePrefix("TABLE|"))
+                            else Text(rule, fontSize = 15.sp, lineHeight = 21.sp)
                         }
                     }
                 }
             }
         }
     }
+}
+
+/** A small grid, drawn like a spreadsheet: rows split on newlines, cells on |. The first row is the header. */
+@Composable
+private fun ExampleTable(spec: String) {
+    val rows = spec.split("\n").map { it.split("|") }
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp).border(1.dp, C.Line)) {
+        rows.forEachIndexed { i, cells ->
+            if (i > 0) HorizontalDivider(color = C.Line)
+            Row(Modifier.fillMaxWidth().background(if (i == 0) C.Ground else Color.White)) {
+                cells.forEachIndexed { j, cell ->
+                    if (j > 0) Box(Modifier.width(1.dp).height(34.dp).background(C.Line))
+                    Text(cell, fontSize = 14.sp, fontWeight = if (i == 0) FontWeight.Bold else FontWeight.Normal, maxLines = 1,
+                        modifier = Modifier.weight(if (j == 0) 0.9f else 1f).padding(horizontal = 8.dp, vertical = 8.dp))
+                }
+            }
+        }
+    }
+    Muted("Column order doesn't matter. Save as .csv or .xlsx and upload it in Setup › Rates.", 13)
 }
