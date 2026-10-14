@@ -47,6 +47,7 @@ val HOW_TOPICS: List<HowTopic> = listOf(
     HowTopic(
         "pay", "Pay", "Commission math, credits and pay periods",
         listOf(
+            "Recurring expenses" to "Set on the Expenses tab (name, dollars a week, start week). Each Sat–Fri pay week it's running, it comes out of that week's pay on the Pay page and out of the period total, route days or not. Stop takes effect after the current week; Remove takes it out of every week. Stored day pay never changes, so a locked period's pay stays as it was: only the amount shown after expenses moves. One-time expenses never touch pay.",
             "Rates used" to "For each product the app uses the market rate and the commission % / credit % in effect on that day: the newest rate whose effective date is on or before the day.",
             "A sale line" to "cases or units × market rate × commission %.",
             "A credit (return) line" to "−(qty × market rate × commission %) − qty × market rate × (1 − credit %). You lose the commission you earned, plus the part of the product's value Ole doesn't credit back.",
@@ -102,6 +103,16 @@ val HOW_TOPICS: List<HowTopic> = listOf(
             "Went missing and appeared" to "Product that left the truck with no sale, buy back or delivery behind it, and product that showed up with nothing to explain it. Both are findings, listed separately and never netted against each other. Value is the eaches off × market rate.",
             "Delivery periods" to "If 6 or more products go up by 150+ eaches in total, it looks like freight that wasn't recorded as delivered. Then increases can't be told from restock, and only a drop bigger than what came in can show. That's said on the screen, never called clean.",
             "Missing imports" to "If the route ran on a day with no import in between (weekdays learned from your own imports), the screen says so: the finding happened somewhere in that stretch, not on one particular day.",
+        ),
+    ),
+    HowTopic(
+        "expenses", "Expenses", "Recurring out of pay, one-time log, the spending chart and the report",
+        listOf(
+            "Recurring" to "Weekly amounts like a truck rental. They come out of each Sat–Fri pay week from the start week until you stop them (the week you stop in still pays it). Separate from Taco-Boys.",
+            "One-time" to "A dated log with a category (Gas, Supplies, Tolls, Repairs, Other, or your own). Never taken out of pay.",
+            "The chart" to "Tap a category to see it by week (the last 12 Sat–Fri weeks) or by month (the last 12 months). The average counts only weeks or months you bought something. Under it, each category's total this week and this month.",
+            "Expense report" to "A PDF for the current pay period: recurring with its total (weekly amount × the weeks it applied), one-time with its total and a by-category line, then both added together. Subject Expense report, sent to your own email from Setup › Email addresses.",
+            "Backups" to "Expenses are in the app's database, so backups include them. Removing a day's import never touches them.",
         ),
     ),
     HowTopic(

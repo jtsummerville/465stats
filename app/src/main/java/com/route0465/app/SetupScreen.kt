@@ -231,6 +231,7 @@ private fun EmailsSection(back: () -> Unit) {
     var editing by remember { mutableStateOf(false) }
     var order by remember { mutableStateOf(Prefs.orderEmail(ctx)) }
     var bosses by remember { mutableStateOf(Prefs.bossEmails(ctx)) }
+    var mine by remember { mutableStateOf(Prefs.myEmail(ctx)) }
     var error by remember { mutableStateOf<String?>(null) }
 
     ScreenColumn {
@@ -239,22 +240,25 @@ private fun EmailsSection(back: () -> Unit) {
             if (!editing) {
                 ReadRow("Orders go to", Prefs.orderEmail(ctx))
                 ReadRow("End of Day paperwork goes to", Prefs.bossEmails(ctx))
+                ReadRow("Expense reports go to (your email)", Prefs.myEmail(ctx))
             } else {
                 OutlinedTextField(order, { order = it }, Modifier.fillMaxWidth(), label = { Text("Orders go to") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
                 OutlinedTextField(bosses, { bosses = it }, Modifier.fillMaxWidth(), label = { Text("End of Day paperwork goes to (separate with commas)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
+                OutlinedTextField(mine, { mine = it }, Modifier.fillMaxWidth(), label = { Text("Expense reports go to (your email)") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email))
                 Muted("Use full addresses, like name@gmail.com.", 13)
             }
             EditSaveRow(
                 editing,
-                onEdit = { order = Prefs.orderEmail(ctx); bosses = Prefs.bossEmails(ctx); error = null; editing = true },
+                onEdit = { order = Prefs.orderEmail(ctx); bosses = Prefs.bossEmails(ctx); mine = Prefs.myEmail(ctx); error = null; editing = true },
                 onCancel = { editing = false; error = null },
                 onSave = {
-                    if (!validEmails(order) || !validEmails(bosses)) {
+                    if (!validEmails(order) || !validEmails(bosses) || !validEmails(mine)) {
                         error = "One of those isn't a full email address. Check for the @ and the .com part."
                     } else {
-                        Prefs.setOrderEmail(ctx, order.trim()); Prefs.setBossEmails(ctx, bosses.trim())
+                        Prefs.setOrderEmail(ctx, order.trim()); Prefs.setBossEmails(ctx, bosses.trim()); Prefs.setMyEmail(ctx, mine.trim())
                         editing = false; error = null
                     }
                 },

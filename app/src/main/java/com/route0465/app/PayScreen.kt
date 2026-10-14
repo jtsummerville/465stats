@@ -36,6 +36,7 @@ import java.time.LocalDate
 fun PayScreen(v: Int) {
     val ctx = LocalContext.current
     val days = remember(v) { Db.get(ctx).days() }
+    val recurring = remember(v) { Expenses.recurring(Db.get(ctx)) }
     val today = LocalDate.now()
     var offset by remember { mutableStateOf(0) }
     val start = Periods.startOf(today).plusDays(offset * 14L)
@@ -53,8 +54,10 @@ fun PayScreen(v: Int) {
             Panel(Modifier.weight(1f)) {
                 Text(status, fontSize = 14.sp, color = C.Muted, fontWeight = FontWeight.SemiBold)
                 Text("${start.format(Fmt.day)} – ${end.format(Fmt.day)}", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                val periodExp = (0..1).sumOf { w -> Expenses.forWeek(recurring, start.plusDays(w * 7L)).sumOf { it.weekly } }
                 Text("Period total", fontSize = 14.sp, color = C.Muted, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 10.dp))
-                Text(Fmt.money(inPeriod.sumOf { it.pay }), fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, color = C.Green)
+                Text(Fmt.money(inPeriod.sumOf { it.pay } - periodExp), fontSize = 34.sp, fontWeight = FontWeight.ExtraBold, color = C.Green)
+                if (periodExp > 0) Muted("after ${Fmt.money(periodExp)} in recurring expenses", 13)
             }
             ArrowButton(left = false, enabled = offset < 0) { offset += 1 }
         }
@@ -64,10 +67,12 @@ fun PayScreen(v: Int) {
                 val wStart = start.plusDays(w * 7L)
                 val wEnd = wStart.plusDays(6)
                 val wDays = inPeriod.filter { !it.date.isBefore(wStart) && !it.date.isAfter(wEnd) }.sortedBy { it.date }
+                val wExp = Expenses.forWeek(recurring, wStart)
+                val before = wDays.sumOf { it.pay }
                 Panel(Modifier.part(1f)) {
                     Row(Modifier.fillMaxWidth()) {
                         Text("Week ${w + 1} · ${wStart.format(Fmt.md)} – ${wEnd.format(Fmt.md)}", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
-                        Text(Fmt.money(wDays.sumOf { it.pay }), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                        Text(Fmt.money(before - wExp.sumOf { it.weekly }), fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
                     }
                     HorizontalDivider(color = C.Divider)
                     if (wDays.isEmpty()) Muted("No route days")
@@ -76,6 +81,19 @@ fun PayScreen(v: Int) {
                             Text(d.date.format(Fmt.day) + if (d.date == today) " (today)" else "", fontSize = 17.sp, modifier = Modifier.weight(1f))
                             if (d.missingRates.isNotEmpty()) Text("rates missing  ", fontSize = 13.sp, color = C.Amber, fontWeight = FontWeight.Bold)
                             Text(Fmt.money(d.pay), fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    if (wExp.isNotEmpty()) {
+                        HorizontalDivider(color = C.Divider)
+                        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                            Text("Pay before expenses", fontSize = 15.sp, color = C.Muted, modifier = Modifier.weight(1f))
+                            Text(Fmt.money(before), fontSize = 15.sp, color = C.Muted)
+                        }
+                        wExp.forEach { e ->
+                            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                                Text("${e.name} (recurring)", fontSize = 15.sp, color = C.Red, modifier = Modifier.weight(1f))
+                                Text("− " + Fmt.money(e.weekly), fontSize = 15.sp, color = C.Red, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                     val payday = wEnd

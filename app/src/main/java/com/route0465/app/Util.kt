@@ -96,6 +96,11 @@ fun defaultCreditPct(code: String): Double =
 object Prefs {
     private fun sp(ctx: Context) = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
+    /** Route number, for emails and PDFs. 0465 until Setup gets a box for it. */
+    fun routeNumber(ctx: Context): String = sp(ctx).getString("route_number", "0465")?.ifBlank { "0465" } ?: "0465"
+    /** The driver's own address: where the expense report goes. */
+    fun myEmail(ctx: Context): String = sp(ctx).getString("my_email", "") ?: ""
+    fun setMyEmail(ctx: Context, v: String) = sp(ctx).edit().putString("my_email", v.trim()).apply()
     fun xsalesPath(ctx: Context): String = sp(ctx).getString("xsales_path", "") ?: ""
     fun setXsalesPath(ctx: Context, v: String) = sp(ctx).edit().putString("xsales_path", v.trim()).apply()
 
