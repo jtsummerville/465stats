@@ -169,21 +169,56 @@ fun ShortagesScreen(v: Int, bump: () -> Unit) {
     var picking by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<Shortage?>(null) }
     val kinds = listOf("Warehouse short", "Missing freight")
+    // What each shortage was worth: cases × case pack × market rate on that day, and the commission you'd have made on it.
+    val packs = remember(v) { repo.casePacks() }
+    class Worth(val value: Double?, val pay: Double?)
+    val worth = remember(v) {
+        list.associate { s ->
+            val day = (parseLooseDate(s.date) ?: LocalDate.now()).toString()
+            val rate = repo.rateFor(s.code, day)
+            val mr = rate?.marketRate?.takeIf { it > 0 }
+            val pack = packs[s.code.uppercase()]?.takeIf { it > 0 } ?: 1.0
+            val value = mr?.let { s.qty * pack * it }
+            s.id to Worth(value, value?.let { it * (rate.commissionPct.let { p -> if (p > 1) p / 100 else p }) })
+        }
+    }
+    val thisWeek = Periods.weekStart(LocalDate.now())
+    val weeks = list.groupBy { Periods.weekStart(parseLooseDate(it.date) ?: LocalDate.now()) }.toSortedMap(compareByDescending { it })
 
     ScreenColumn {
         Split {
             Panel(Modifier.part(1.4f)) {
                 H2("Shortages")
+                Muted("Value = cases × case pack × market rate that day. Lost pay = the commission you'd have made on it.", 13)
                 if (list.isEmpty()) Muted("None logged.")
-                list.forEach { s ->
+                weeks.forEach { (ws, items) ->
+                    val value = items.sumOf { worth[it.id]?.value ?: 0.0 }
+                    val pay = items.sumOf { worth[it.id]?.pay ?: 0.0 }
+                    val noRate = items.count { worth[it.id]?.value == null }
                     HorizontalDivider(color = C.Divider)
-                    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("${s.code} ${s.name}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Muted("${parseLooseDate(s.date)?.format(Fmt.day) ?: s.date} · ${s.kind}", 14)
+                            Text((if (ws == thisWeek) "This week · " else "Week of ") + "${ws.format(Fmt.md)} – ${ws.plusDays(6).format(Fmt.md)}", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = C.GreenDark)
+                            Muted("${Fmt.qty(items.sumOf { it.qty })} cases short" + if (noRate > 0) " · $noRate with no market rate" else "", 13)
                         }
-                        Text("${Fmt.qty(s.qty)} cs", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
-                        Text("Remove", color = C.Red, fontSize = 14.sp, modifier = Modifier.clickable { deleting = s }.padding(12.dp))
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(Fmt.money(value) + " value", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text(Fmt.money(pay) + " lost pay", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = C.Red)
+                        }
+                    }
+                    items.forEach { s ->
+                        val w = worth[s.id]
+                        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("${s.code} ${s.name}", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                Muted("${parseLooseDate(s.date)?.format(Fmt.day) ?: s.date} · ${s.kind}", 13)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("${Fmt.qty(s.qty)} cs", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                                Muted(w?.value?.let { Fmt.money(it) + " · " + Fmt.money(w.pay ?: 0.0) + " pay" } ?: "no market rate", 12)
+                            }
+                            Text("Remove", color = C.Red, fontSize = 14.sp, modifier = Modifier.clickable { deleting = s }.padding(12.dp))
+                        }
                     }
                 }
             }
