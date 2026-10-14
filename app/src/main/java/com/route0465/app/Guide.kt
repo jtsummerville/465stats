@@ -159,7 +159,7 @@ val GUIDE_TOPICS: List<GuideTopic> = listOf(
     GuideTopic(
         "shortages", "When freight is short · Shortages", "Log it so the week shows what it cost you.",
         listOf(
-            "Shortages tab › pick the product, cases short, Warehouse short or Missing freight, Log shortage.",
+            "Shortages tab › pick the product, cases short, Log shortage.",
             "Each freight week totals the cases, the value at market rate and the pay you lost on it.",
         ),
     ),

@@ -163,10 +163,8 @@ fun ShortagesScreen(v: Int, bump: () -> Unit) {
     val list = remember(v) { repo.shortages() }
     var product by remember { mutableStateOf<Product?>(null) }
     var qty by remember { mutableStateOf("1") }
-    var kind by remember { mutableStateOf(0) }
     var picking by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<Shortage?>(null) }
-    val kinds = listOf("Warehouse short", "Missing freight")
     // What each shortage was worth: cases × case pack × market rate on that day, and the commission you'd have made on it.
     val packs = remember(v) { repo.casePacks() }
     class Worth(val value: Double?, val pay: Double?)
@@ -209,7 +207,7 @@ fun ShortagesScreen(v: Int, bump: () -> Unit) {
                         Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text("${s.code} ${s.name}", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                Muted("${parseLooseDate(s.date)?.format(Fmt.day) ?: s.date} · ${s.kind}", 13)
+                                Muted("${parseLooseDate(s.date)?.format(Fmt.day) ?: s.date}", 13)
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 Text("${Fmt.qty(s.qty)} cs", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
@@ -227,10 +225,9 @@ fun ShortagesScreen(v: Int, bump: () -> Unit) {
                     qty, { qty = it }, Modifier.fillMaxWidth(), label = { Text("Cases short") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 )
-                Segmented(kinds, kind) { kind = it }
                 PrimaryButton("Log shortage", Modifier.fillMaxWidth(), enabled = product != null && (qty.toDoubleOrNull() ?: 0.0) > 0) {
                     val p = product ?: return@PrimaryButton
-                    repo.addShortage(LocalDate.now(), p.code, p.name, qty.toDoubleOrNull() ?: 1.0, kinds[kind])
+                    repo.addShortage(LocalDate.now(), p.code, p.name, qty.toDoubleOrNull() ?: 1.0, "Warehouse short")
                     product = null; qty = "1"
                     bump()
                 }

@@ -161,9 +161,9 @@ val HOW_TOPICS: List<HowTopic> = listOf(
         ),
     ),
     HowTopic(
-        "shortages", "Shortages", "Warehouse short and missing freight",
+        "shortages", "Shortages", "Product the warehouse shorted",
         listOf(
-            "What's kept" to "Each entry is today's date, the product, the quantity and whether it was warehouse short or missing freight. They're just a record; they don't change pay or Suggested.",
+            "What's kept" to "Each entry is today's date, the product, and the quantity short. They're just a record; they don't change pay or Suggested.",
             "Value and lost pay" to "Value = cases short × case pack × the market rate in effect that day. Lost pay = that value × your commission % for the product: what you'd have made selling it. Shortages are grouped by freight week (the freight day from Setup › Order guide, Wed–Tue for route 0465), since that's when a shortage happens, with both totals. A product with no market rate shows no value and is counted in the note.",
         ),
     ),
