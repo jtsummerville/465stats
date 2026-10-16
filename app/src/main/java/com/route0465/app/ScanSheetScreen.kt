@@ -33,6 +33,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -66,11 +67,13 @@ private class SheetItem(val p: UpcItem, qty: String, val price: Double = 0.0) {
     var qty by mutableStateOf(qty)
 }
 
-/** Ole lists products highest dollar value first: by the invoice's unit price, else the uploaded market rate. */
+/** Unit price for ordering: the XSales invoice's price when the sheet was filled from one, else the uploaded market rate. */
 private fun unitPrice(repo: Db, it: SheetItem): Double =
     if (it.price > 0) it.price else repo.rateFor(it.p.code, LocalDate.now().toString())?.marketRate ?: 0.0
 
-private fun List<SheetItem>.byValue(repo: Db): List<SheetItem> = sortedWith(compareByDescending<SheetItem> { unitPrice(repo, it) }.thenBy { it.p.code })
+/** The XSales invoice lists products by line total (eaches × unit price), biggest first; the sheet matches it top to bottom. No quantity yet → bottom. */
+private fun List<SheetItem>.byValue(repo: Db): List<SheetItem> =
+    sortedWith(compareByDescending<SheetItem> { (it.qty.toIntOrNull() ?: 0) * unitPrice(repo, it) }.thenBy { it.p.code })
 
 private fun casesNote(qty: String, pack: String): String {
     val q = qty.toIntOrNull() ?: return ""
@@ -99,9 +102,11 @@ fun ScanSheetScreen(v: Int, go: (Screen) -> Unit) {
     var storeName by remember { mutableStateOf(draft.storeName) }
     var date by remember { mutableStateOf(draft.date.ifBlank { LocalDate.now().format(Fmt.mdy) }) }
     var route by remember { mutableStateOf(draft.route) }
-    val items = remember { mutableStateListOf<SheetItem>().apply { draft.items.forEach { (c, q) -> byCode[c]?.let { add(SheetItem(it, q)) } } } }
+    val items = remember { mutableStateListOf<SheetItem>().apply { draft.items.forEach { d -> byCode[d.code]?.let { add(SheetItem(it, d.qty, d.price)) } } } }
 
-    fun persist() = SheetDraft.save(ctx, SheetDraft.Draft(storeCode, storeName, date, route, items.map { it.p.code to it.qty }))
+    fun persist() = SheetDraft.save(ctx, SheetDraft.Draft(storeCode, storeName, date, route, items.map { SheetDraft.Item(it.p.code, it.qty, it.price) }))
+    /** Puts the rows back in invoice order (by line total) after a quantity changes. */
+    fun resort() { val sorted = items.toList().byValue(repo); items.clear(); items.addAll(sorted) }
 
     var pickStore by remember { mutableStateOf(false) }
     var pickProduct by remember { mutableStateOf(false) }
@@ -201,8 +206,13 @@ fun ScanSheetScreen(v: Int, go: (Screen) -> Unit) {
                         Text("Case of ${row.p.casePack.ifEmpty { "?" }}  ·  ${row.p.upc}", fontSize = 13.sp, color = C.Muted)
                     }
                     Column(horizontalAlignment = Alignment.End) {
+                        var hadFocus by remember(row) { mutableStateOf(false) }
                         OutlinedTextField(
-                            row.qty, { s -> row.qty = s.filter { c -> c.isDigit() }.take(5); persist() }, Modifier.width(120.dp),
+                            row.qty, { s -> row.qty = s.filter { c -> c.isDigit() }.take(5); persist() },
+                            Modifier.width(120.dp).onFocusChanged { f ->
+                                // Re-order once the quantity is finished (focus leaves the box), not on every keystroke.
+                                if (f.isFocused) hadFocus = true else if (hadFocus) { hadFocus = false; resort() }
+                            },
                             singleLine = true, label = { Text("Eaches") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             isError = (row.qty.toIntOrNull() ?: 0) <= 0,

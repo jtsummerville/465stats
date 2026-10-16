@@ -54,19 +54,21 @@ data class SheetPrint(val storeCode: String, val storeName: String, val date: Lo
 object SheetDraft {
     private fun sp(ctx: Context) = ctx.getSharedPreferences("scan_sheet", Context.MODE_PRIVATE)
 
-    data class Draft(val storeCode: String, val storeName: String, val date: String, val route: String, val items: List<Pair<String, String>>)
+    /** One sheet line. [price] is the XSales invoice's unit price when the sheet was filled from one (0 = none, use the market rate). */
+    data class Item(val code: String, val qty: String, val price: Double = 0.0)
+    data class Draft(val storeCode: String, val storeName: String, val date: String, val route: String, val items: List<Item>)
 
     fun load(ctx: Context): Draft {
         val p = sp(ctx)
         val arr = runCatching { JSONArray(p.getString("items", "[]")) }.getOrDefault(JSONArray())
-        val items = List(arr.length()) { i -> arr.getJSONObject(i).let { it.getString("code") to it.optString("qty", "") } }
+        val items = List(arr.length()) { i -> arr.getJSONObject(i).let { Item(it.getString("code"), it.optString("qty", ""), it.optDouble("price", 0.0)) } }
         return Draft(p.getString("store_code", "") ?: "", p.getString("store_name", "") ?: "", p.getString("date", "") ?: "",
             p.getString("route", "0465") ?: "0465", items)
     }
 
     fun save(ctx: Context, d: Draft) {
         val arr = JSONArray()
-        d.items.forEach { (c, q) -> arr.put(JSONObject().put("code", c).put("qty", q)) }
+        d.items.forEach { arr.put(JSONObject().put("code", it.code).put("qty", it.qty).put("price", it.price)) }
         sp(ctx).edit().putString("store_code", d.storeCode).putString("store_name", d.storeName).putString("date", d.date)
             .putString("route", d.route).putString("items", arr.toString()).apply()
     }
